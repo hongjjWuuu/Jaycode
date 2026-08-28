@@ -7095,3 +7095,117 @@ textarea[data-liquid-glass="ready"] {
 .app-shell[data-ui-theme="classic"] .kpi-card:nth-child(4n + 2) { background: #f0f8e9 !important; border-top-color: #6b9b42 !important; }
 .app-shell[data-ui-theme="classic"] .kpi-card:nth-child(4n + 3) { background: #fff7df !important; border-top-color: #d39a25 !important; }
 .app-shell[data-ui-theme="classic"] .kpi-card:nth-child(4n + 4) { background: #fff0f5 !important; border-top-color: #bd648a !important; }
+
+/* Minimal workbench: keep the interface neutral and let task state carry the emphasis. */
+:root {
+  color-scheme: light;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  color: #1f2937;
+  background: #f6f7f9;
+}
+
+.app-shell,
+.app-main,
+.page-grid,
+.reports-page,
+.run-page,
+.workflow-page,
+.history-page,
+.chat-page,
+.llm-page,
+.mcp-page,
+.skills-page,
+.marketplace-page,
+.benchmark-page {
+  background: #f6f7f9 !important;
+  background-image: none !important;
+}
+
+.side-nav,
+.topbar,
+.panel,
+.kpi-card,
+.chat-bubble,
+.chat-current,
+.context-box,
+.knowledge-save-box,
+.source-item,
+.finding-suggestion-card,
+.mcp-tool-card,
+.marketplace-card,
+.marketplace-install-card,
+.rag-gold-card,
+.benchmark-case-card,
+.benchmark-result-item,
+.trace-item,
+.prompt-card,
+.ab-result-card,
+.resume-card,
+.memory-panel,
+.memory-candidate,
+.memory-confirmed {
+  background: #fff !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.panel,
+.kpi-card,
+.chat-bubble,
+.chat-current,
+.context-box,
+.knowledge-save-box,
+.source-item,
+.finding-suggestion-card,
+.mcp-tool-card,
+.marketplace-card,
+.marketplace-install-card,
+.rag-gold-card,
+.benchmark-case-card,
+.benchmark-result-item,
+.trace-item,
+.prompt-card,
+.ab-result-card,
+.resume-card,
+.memory-panel,
+.memory-candidate,
+.memory-confirmed {
+  border-color: #e2e5e9 !important;
+  border-radius: 6px !important;
+}
+
+.panel::before,
+.panel::after,
+[data-liquid-glass="ready"]::before,
+[data-liquid-glass="ready"]::after,
+.nav-garden,
+.liquid-glass-defs {
+  display: none !important;
+}
+
+.panel-title {
+  background: #fff !important;
+  border-bottom-color: #e5e7eb !important;
+}
+
+.side-nav button,
+.mode-tabs button,
+.report-tabs button,
+.palette button,
+.guide-box button,
+.secondary {
+  box-shadow: none !important;
+  background-image: none !important;
+}
+
+.theme-switch {
+  display: none !important;
+}
+
+.workflow-canvas,
+.canvas-surface {
+  background-color: #fafafa !important;
+  background-image: none !important;
+}

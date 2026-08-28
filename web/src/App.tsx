@@ -25,7 +25,6 @@
   X,
 } from 'lucide-react';
 import { FormEvent, PointerEvent, ReactNode, Ref, useEffect, useMemo, useRef, useState } from 'react';
-import { attachLiquidGlassSurfaces } from './liquidGlass';
 import {
   addKnowledgeNote,
   applyReviewAction,
@@ -140,11 +139,8 @@ type ChatMode = 'task' | 'knowledge' | 'coach';
 type ChatMessage = { role: 'user' | 'assistant'; content: string; source?: string; day?: number | null; theme?: string | null };
 type FocusKind = 'module' | 'file';
 type ReportTab = 'final' | 'mentor' | 'mermaid' | 'governance';
-type UiTheme = 'classic' | 'liquid';
 
 const defaultProjectPath = 'F:/JayAgent/Jaycode';
-const uiThemeStorageKey = 'jaycode-ui-theme';
-const legacyUiThemeStorageKey = ['dev', 'agent-ui-theme'].join('-');
 const dragPayloadMime = 'application/jaycode-node';
 
 const modeItems: Array<{ mode: ExecutionMode; label: string; icon: typeof Boxes }> = [
@@ -230,19 +226,6 @@ const initialEdges: WorkflowEdge[] = [
 ];
 
 export function App() {
-  const [uiTheme, setUiTheme] = useState<UiTheme>(() => {
-    const requested = new URLSearchParams(window.location.search).get('theme');
-    if (requested === 'colorful' || requested === 'classic') return 'classic';
-    if (requested === 'clear' || requested === 'liquid') return 'liquid';
-    const saved = window.localStorage.getItem(uiThemeStorageKey) ?? window.localStorage.getItem(legacyUiThemeStorageKey);
-    return saved === 'classic' ? 'classic' : 'liquid';
-  });
-  useEffect(() => {
-    window.localStorage.setItem(uiThemeStorageKey, uiTheme);
-    window.localStorage.removeItem(legacyUiThemeStorageKey);
-    if (uiTheme !== 'liquid') return undefined;
-    return attachLiquidGlassSurfaces();
-  }, [uiTheme]);
   const [activeView, setActiveView] = useState<ViewKey>(() => {
     const requested = new URLSearchParams(window.location.search).get('view');
     const views: ViewKey[] = ['run', 'workflow', 'reports', 'chat', 'history', 'llm', 'mcp', 'skills', 'marketplace', 'benchmark'];
@@ -1325,27 +1308,8 @@ export function App() {
   );
 
   return (
-    <div className="app-shell" data-ui-theme={uiTheme}>
-      <svg className="liquid-glass-defs" aria-hidden="true" focusable="false">
-        <filter id="liquid-glass-refraction" x="-12%" y="-12%" width="124%" height="124%" colorInterpolationFilters="sRGB">
-          <feTurbulence type="fractalNoise" baseFrequency="0.012 0.035" numOctaves="2" seed="18" result="noise" />
-          <feGaussianBlur in="noise" stdDeviation="1.2" result="softNoise" />
-          <feDisplacementMap in="SourceGraphic" in2="softNoise" scale="18" xChannelSelector="R" yChannelSelector="G" result="refracted" />
-          <feGaussianBlur in="refracted" stdDeviation="0.18" />
-        </filter>
-        <filter id="liquid-glass-rim" x="-16%" y="-16%" width="132%" height="132%" colorInterpolationFilters="sRGB">
-          <feTurbulence type="fractalNoise" baseFrequency="0.004 0.011" numOctaves="1" seed="28" result="rimNoise" />
-          <feGaussianBlur in="rimNoise" stdDeviation="1.4" result="softRimNoise" />
-          <feDisplacementMap in="SourceGraphic" in2="softRimNoise" scale="13" xChannelSelector="R" yChannelSelector="G" />
-        </filter>
-      </svg>
+    <div className="app-shell">
       <aside className="side-nav">
-        <div className="nav-garden nav-garden-top" aria-hidden="true">
-          <i>✦</i>
-          <i>✿</i>
-          <i>☘</i>
-          <i>✽</i>
-        </div>
         <div className="brand-mark">D</div>
         <nav>
           {navItems.map((item) => {
@@ -1363,17 +1327,6 @@ export function App() {
             );
           })}
         </nav>
-        <div className="nav-garden nav-garden-middle" aria-hidden="true">
-          <i>✦</i>
-          <i>❀</i>
-          <i>☘</i>
-          <i>✿</i>
-        </div>
-        <div className="nav-garden nav-garden-bottom" aria-hidden="true">
-          <i>❀</i>
-          <i>✦</i>
-          <i>☘</i>
-        </div>
       </aside>
 
       <main className="app-main">
@@ -1383,24 +1336,6 @@ export function App() {
             <span>可视化 Workflow 任务工作台</span>
           </div>
           <div className="topbar-actions">
-            <div className="theme-switch" role="group" aria-label="界面风格">
-              <button
-                type="button"
-                className={uiTheme === 'classic' ? 'active' : ''}
-                onClick={() => setUiTheme('classic')}
-                title="使用带彩色环境光的缤纷风格"
-              >
-                缤纷
-              </button>
-              <button
-                type="button"
-                className={uiTheme === 'liquid' ? 'active' : ''}
-                onClick={() => setUiTheme('liquid')}
-                title="使用动态透明水玻璃的清透风格"
-              >
-                清透
-              </button>
-            </div>
             <div className={`status-pill ${latestStatus}`}>{running ? 'running' : latestStatus}</div>
           </div>
         </header>
@@ -2505,7 +2440,7 @@ function NodeConfig({
   );
 }
 
-function WorkflowCanvas({
+function LegacyWorkflowCanvas({
   canvasRef,
   canvasSize,
   connectFrom,
@@ -2610,7 +2545,7 @@ function WorkflowCanvas({
   );
 }
 
-function SavedWorkflows({
+function LegacySavedWorkflows({
   workflows,
   onLoad,
   onRefresh,
@@ -2637,7 +2572,7 @@ function SavedWorkflows({
   );
 }
 
-function NodeConfig({
+function LegacyNodeConfig({
   node,
   approvals,
   onNodeChange,
@@ -5678,4 +5613,3 @@ function parseMermaid(source: string) {
     height: 220,
   };
 }
-
