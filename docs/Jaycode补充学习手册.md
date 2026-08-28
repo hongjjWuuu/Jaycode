@@ -188,7 +188,6 @@ Benchmark 不是临时脚本，而是可保存、可对比、可复跑的评测�
 - [web/src/types.ts](F:/JayAgent/Jaycode/web/src/types.ts)
 - [web/src/main.tsx](F:/JayAgent/Jaycode/web/src/main.tsx)
 - [web/src/styles.css](F:/JayAgent/Jaycode/web/src/styles.css)
-- [web/src/liquidGlass.ts](F:/JayAgent/Jaycode/web/src/liquidGlass.ts)
 
 #### 你要补的认知
 
@@ -233,10 +232,14 @@ Benchmark 不是临时脚本，而是可保存、可对比、可复跑的评测�
 - 前后端数据结构如何对齐
 - Task / Event / Artifact / Workflow / Skill / MCP / Benchmark 类型如何统一
 
-##### `styles.css` 和 `liquidGlass.ts`
+##### `styles.css`
 
-这两个文件不属于主业务，但它们是产品层体验的一部分。  
-它说明这个项目不仅关注功能，也关注控制台的交互氛围和视觉层级。
+这个文件主要负责前端控制台的静态视觉层。当前版本已经收敛为极简风格，因此重点是：
+
+- 统一中性背景和面板边框
+- 保留必要的状态色和交互反馈
+- 避免额外的背景纹理、渐变和拟物效果
+- 保证各页面模块清晰可读
 
 ---
 
@@ -807,7 +810,6 @@ workflow JSON
 ### 第三优先级：后续补充
 
 1. [web/src/styles.css](F:/JayAgent/Jaycode/web/src/styles.css)
-2. [web/src/liquidGlass.ts](F:/JayAgent/Jaycode/web/src/liquidGlass.ts)
 3. [scripts/launch_mcp_filesystem.py](F:/JayAgent/Jaycode/scripts/launch_mcp_filesystem.py)
 4. [scripts/launch_mcp_memory.py](F:/JayAgent/Jaycode/scripts/launch_mcp_memory.py)
 5. [scripts/fake_mcp_server.py](F:/JayAgent/Jaycode/scripts/fake_mcp_server.py)
@@ -1151,4 +1153,3 @@ Jaycode 的价值，不在某一个单点功能，而在于它把一整套 Agent
 - 有 benchmark 评测
 
 如果你想系统学习 Agent 开发，这个项目比“单纯的聊天 Demo”更值得深挖，因为它更接近真实工程形态。
-

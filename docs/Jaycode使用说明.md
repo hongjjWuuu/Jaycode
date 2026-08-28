@@ -110,10 +110,10 @@ http://127.0.0.1:8100/docs
 
 ```powershell
 Test-Path F:\JayAgent\Jaycode\web\dist\index.html
-Test-Path F:\JayAgent\Jaycode\web\dist\assets\jaycode.css
+Test-Path F:\JayAgent\Jaycode\web\dist\assets
 ```
 
-如果页面能打开但没有样式，通常说明 `jaycode.css` 没有加载，或者浏览器打开的是旧缓存。
+如果页面能打开但样式异常，通常说明前端构建未完成、浏览器缓存过旧，或者 `web\src\styles.css` 的改动还没有重新打包进 `web\dist`。
 
 ---
 
@@ -1098,7 +1098,7 @@ F:/JayAgent/Jaycode
 
 ```powershell
 Test-Path F:\JayAgent\Jaycode\web\dist\index.html
-Test-Path F:\JayAgent\Jaycode\web\dist\assets\jaycode.css
+Test-Path F:\JayAgent\Jaycode\web\dist\assets
 ```
 
 然后强制刷新浏览器。
@@ -1274,4 +1274,3 @@ Bench 页负责质量评测
   -> 保存知识
   -> 历史回放
 ```
-
