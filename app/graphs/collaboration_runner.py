@@ -4,7 +4,6 @@ from typing import Any
 
 from app.graphs.studio_graphs import collaboration_graph
 
-
 COLLABORATION_NODES = [
     ("planner", "Planner"),
     ("project_analyzer", "Project Analyzer"),

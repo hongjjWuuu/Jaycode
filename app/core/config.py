@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     app_env: str = "dev"
     max_scan_files: int = 800
     max_file_preview_chars: int = 4000
+    jaycode_task_max_runtime_seconds: int = Field(default=900, validation_alias="JAYCODE_TASK_MAX_RUNTIME_SECONDS")
     jaycode_auth_enabled: bool = Field(default=True, validation_alias="JAYCODE_AUTH_ENABLED")
     jaycode_api_keys: str = Field(default="", validation_alias="JAYCODE_API_KEYS")
     jaycode_marketplace_remote_enabled: bool = Field(default=False, validation_alias="JAYCODE_MARKETPLACE_REMOTE_ENABLED")

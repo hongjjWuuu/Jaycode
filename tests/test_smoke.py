@@ -1,6 +1,9 @@
 from fastapi.testclient import TestClient
 
+from app.agents.rag_tools import _chunk_text
+from app.graphs.workflow_compiler import validate_workflow_definition
 from app.main import app
+from app.persistence.sqlite_store import SQLiteTaskStore
 
 
 def test_web_app_can_be_created() -> None:
@@ -61,3 +64,33 @@ def test_task_review_resume() -> None:
     )
     assert approved.status_code == 200
     assert approved.json()["status"] == "completed"
+
+
+def test_workflow_cycles_and_disconnected_nodes_are_blocked() -> None:
+    result = validate_workflow_definition(
+        [{"id": "a", "type": "planner"}, {"id": "b", "type": "reporter"}, {"id": "orphan", "type": "reporter"}],
+        [{"source": "a", "target": "b"}, {"source": "b", "target": "a"}],
+    )
+    assert result["valid"] is False
+    assert any("cycle" in item.lower() for item in result["errors"])
+    assert any("disconnected" in item.lower() for item in result["errors"])
+
+
+def test_sqlite_task_idempotency_events_and_pragmas(tmp_path) -> None:
+    store = SQLiteTaskStore(tmp_path / "p1.db")
+    assert store._connect().execute("PRAGMA journal_mode").fetchone()[0].lower() == "wal"
+    context = {"idempotency_key": "same-request", "actor_id": "actor", "role": "user"}
+    assert store.create_task("task-one", "goal", ".", "created", context) is None
+    existing = store.create_task("task-two", "goal", ".", "created", context)
+    assert existing and existing["task_id"] == "task-one"
+    event = {"event_id": "event-one", "task_id": "task-one", "type": "task", "content": "once"}
+    store.append_event(event)
+    store.append_event(event)
+    assert len(store.get_events("task-one")) == 1
+
+
+def test_rag_chunks_include_source_metadata() -> None:
+    chunks = _chunk_text("app/example.py", "line one\n" * 30)
+    assert chunks
+    assert chunks[0]["metadata"]["language"] == "py"
+    assert chunks[0]["metadata"]["module_name"] == "example"

@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-import re
-import sqlite3
 import hashlib
 import json
 import math
 import os
+import re
+import sqlite3
 from contextlib import contextmanager
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -62,6 +62,7 @@ class SQLiteRagStore:
                     chunk_id TEXT NOT NULL,
                     path TEXT NOT NULL,
                     content TEXT NOT NULL,
+                    metadata_json TEXT NOT NULL DEFAULT '{}',
                     created_at TEXT NOT NULL 
                 )
                 """
@@ -86,6 +87,8 @@ class SQLiteRagStore:
             chunk_columns = {row["name"] for row in conn.execute("PRAGMA table_info(rag_chunk)").fetchall()}
             if "document_version" not in chunk_columns:
                 conn.execute("ALTER TABLE rag_chunk ADD COLUMN document_version INTEGER NOT NULL DEFAULT 1")
+            if "metadata_json" not in chunk_columns:
+                conn.execute("ALTER TABLE rag_chunk ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}'")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_rag_document_current ON rag_document(collection, path, is_current)")
             
             # 评测数据集表
@@ -108,7 +111,7 @@ class SQLiteRagStore:
     
     # 增量索引 + 版本管理
     # RAG 不是每次全量重建，而是增量治理
-    def ingest(self, collection: str, documents: list[dict[str, Any]], chunks: list[dict[str, str]]) -> dict[str, int]:
+    def ingest(self, collection: str, documents: list[dict[str, Any]], chunks: list[dict[str, Any]]) -> dict[str, int]:
         grouped = _group_chunks(chunks) # 按文档路径分组
         changed_documents = 0
         with self._connection() as conn:
@@ -144,8 +147,8 @@ class SQLiteRagStore:
                 conn.execute("DELETE FROM rag_chunk WHERE collection = ? AND path = ? AND document_version = ?", (collection, path, version))
                 for chunk in grouped.get(path, []):
                     conn.execute(
-                        "INSERT INTO rag_chunk(collection, chunk_id, path, content, created_at, document_version) VALUES (?, ?, ?, ?, ?, ?)",
-                        (collection, chunk["chunk_id"], path, chunk["content"], utc_now_iso(), version),
+                        "INSERT INTO rag_chunk(collection, chunk_id, path, content, metadata_json, created_at, document_version) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        (collection, chunk["chunk_id"], path, chunk["content"], json.dumps(chunk.get("metadata") or {}, ensure_ascii=False), utc_now_iso(), version),
                     )
         return {"document_count": len(documents), "chunk_count": len(chunks), "changed_document_count": changed_documents}
 
@@ -156,7 +159,7 @@ class SQLiteRagStore:
         with self._connection() as conn:
             rows = conn.execute(
                 """
-                SELECT c.chunk_id, c.path, c.content, d.acl_json
+                SELECT c.chunk_id, c.path, c.content, c.metadata_json, d.acl_json
                 FROM rag_chunk c JOIN rag_document d
                   ON c.collection = d.collection AND c.path = d.path AND c.document_version = d.version
                 WHERE c.collection = ? AND d.is_current = 1
@@ -165,7 +168,7 @@ class SQLiteRagStore:
             ).fetchall()
         # 第二步：ACL 过滤 
         visible = [
-            {"chunk_id": row["chunk_id"], "path": row["path"], "content": row["content"]}
+            {"chunk_id": row["chunk_id"], "path": row["path"], "content": row["content"], "metadata": json.loads(row["metadata_json"] or "{}")}
             for row in rows
             if _acl_allows(row["acl_json"], actor_id)
         ]
@@ -341,8 +344,8 @@ class EmbeddingProvider:
                 vectors = embeddings.embed_documents(texts)
                 self._last_source = "openai"
                 return [_fit_dimension(vector, self.dimension) for vector in vectors]
-            except Exception:
-                pass
+            except Exception as exc:  # noqa: BLE001 - embedding falls back to deterministic local mode
+                self._last_error = str(exc)
         self._last_source = "hash_fallback"
         return [self._hash_embedding(text) for text in texts]
     
@@ -361,8 +364,8 @@ class EmbeddingProvider:
                 embeddings = OpenAIEmbeddings(**kwargs)
                 self._last_source = "openai"
                 return _fit_dimension(embeddings.embed_query(text), self.dimension)
-            except Exception:
-                pass
+            except Exception as exc:  # noqa: BLE001 - embedding falls back to deterministic local mode
+                self._last_error = str(exc)
         self._last_source = "hash_fallback"
         return self._hash_embedding(text)
 
@@ -437,6 +440,7 @@ class PgVectorRagStore:
                         chunk_id TEXT NOT NULL,
                         path TEXT NOT NULL,
                         content TEXT NOT NULL,
+                        metadata_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
                         embedding vector({self.dimension}) NOT NULL,
                         embedding_source TEXT NOT NULL,
                         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -461,6 +465,7 @@ class PgVectorRagStore:
                 # ACL 用 JSONB 而不是 TEXT
                 cur.execute("ALTER TABLE rag_document ADD COLUMN IF NOT EXISTS acl_json JSONB NOT NULL DEFAULT '[\"*\"]'::jsonb")
                 cur.execute("ALTER TABLE rag_chunk ADD COLUMN IF NOT EXISTS document_version INTEGER NOT NULL DEFAULT 1")
+                cur.execute("ALTER TABLE rag_chunk ADD COLUMN IF NOT EXISTS metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb")
                 cur.execute("ALTER TABLE rag_document DROP CONSTRAINT IF EXISTS rag_document_collection_path_key")
                 cur.execute("ALTER TABLE rag_chunk DROP CONSTRAINT IF EXISTS rag_chunk_collection_chunk_id_key")
                 # 主键约束从 (collection, path) 改为 (collection, path, version)
@@ -550,14 +555,15 @@ class PgVectorRagStore:
                 for (chunk, version), vector in zip(changed_chunks, vectors, strict=False):
                     cur.execute(
                         """
-                        INSERT INTO rag_chunk(collection, chunk_id, path, content, embedding, embedding_source, created_at, document_version)
-                        VALUES (%s, %s, %s, %s, %s::vector, %s, %s, %s)
+                        INSERT INTO rag_chunk(collection, chunk_id, path, content, metadata_json, embedding, embedding_source, created_at, document_version)
+                        VALUES (%s, %s, %s, %s, %s::jsonb, %s::vector, %s, %s, %s)
                         """,
                         (
                             collection,
                             chunk["chunk_id"],
                             chunk["path"],
                             chunk["content"],
+                            _json_text(chunk.get("metadata") or {}),
                             _vector_literal(vector),
                             self.embedding.source,
                             now,
@@ -571,13 +577,13 @@ class PgVectorRagStore:
     def query(self, collection: str, question: str, limit: int = 5, actor_id: str = "local-user") -> list[dict[str, Any]]:
         # 第一步：问题转向量
         vector = self.embedding.embed_query(question)
-        with self._connect() as conn:
+        with self._connect() as conn:  # noqa: SIM117 - cursor lifetime is nested for PostgreSQL transactions
             with conn.cursor() as cur:
                 # 第二步：向量检索
                 # <=> 是 pgvector 的余弦距离运算符，值越小越相似。1 - 距离 转成相似度分数
                 cur.execute(
                     """
-                    SELECT c.chunk_id, c.path, c.content, 1 - (c.embedding <=> %s::vector) AS vector_score, d.acl_json
+                    SELECT c.chunk_id, c.path, c.content, c.metadata_json, 1 - (c.embedding <=> %s::vector) AS vector_score, d.acl_json
                     FROM rag_chunk c JOIN rag_document d
                       ON c.collection = d.collection AND c.path = d.path AND c.document_version = d.version
                     WHERE c.collection = %s AND d.is_current = TRUE
@@ -589,9 +595,9 @@ class PgVectorRagStore:
                 rows = cur.fetchall()
         # 第三步：ACL 过滤
         visible = [
-            {"chunk_id": row[0], "path": row[1], "content": str(row[2]), "vector_score": float(row[3] or 0)}
+            {"chunk_id": row[0], "path": row[1], "content": str(row[2]), "metadata": row[3] or {}, "vector_score": float(row[4] or 0)}
             for row in rows
-            if _acl_allows(_json_text(row[4]), actor_id) # 只保留用户有权看的
+            if _acl_allows(_json_text(row[5]), actor_id) # 只保留用户有权看的
         ]
         # 第四步：混合排序 + 可选重排
         ranked = _rank_hybrid(question, visible, vector_score_key="vector_score")
@@ -600,7 +606,7 @@ class PgVectorRagStore:
 
     # 列出文档（带 ACL 过滤）
     def list_documents(self, collection: str | None = None, actor_id: str = "local-user") -> list[dict[str, Any]]:
-        with self._connect() as conn:
+        with self._connect() as conn:  # noqa: SIM117 - cursor lifetime is nested for PostgreSQL transactions
             with conn.cursor() as cur:
                 if collection:
                     cur.execute(
@@ -727,7 +733,7 @@ class PgVectorRagStore:
         if clauses:
             query += " WHERE " + " AND ".join(clauses)
         query += " ORDER BY updated_at DESC"
-        with self._connect() as conn:
+        with self._connect() as conn:  # noqa: SIM117 - cursor lifetime is nested for PostgreSQL transactions
             with conn.cursor() as cur:
                 cur.execute(query, params)
                 rows = cur.fetchall()
@@ -975,7 +981,8 @@ def _rerank_candidates(question: str, candidates: list[dict[str, Any]]) -> list[
             item["rerank_score"] = max(0, len(reranked) - index)
             item["retrieval_mode"] = f"{item.get('retrieval_mode', 'hybrid')}_llm_rerank"
         return reranked
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 - reranking is optional and retrieval remains available
+        _ = exc
         return candidates
 
 

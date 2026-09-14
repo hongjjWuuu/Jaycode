@@ -86,7 +86,7 @@ def review_single_file(project_path: str, file_path: str, max_chars: int = 20000
     # 安全检验：防止用户传入 ../../etc/passwd 这类路径穿越攻击，读取项目外的文件
     try:
         target.relative_to(root)
-    except ValueError as exc:
+    except ValueError:
         raise PermissionError("Refusing to review outside project root")
     if not target.is_file():
         raise FileNotFoundError(str(target))

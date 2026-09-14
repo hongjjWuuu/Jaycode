@@ -3,20 +3,20 @@ from __future__ import annotations
 import json
 import os
 import queue
+import re
 import subprocess
 import sys
-import threading
 import time
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
-import re
 
 from app.agents.project_tools import EXCLUDED_DIRS
 from app.core.config import settings
 from app.core.security import execution_auth_context
 from app.harness.events import utc_now_iso
 from app.persistence.sqlite_store import task_store
+
 
 # 本地确定性适配器
 #   - 用于开发、演示和回退
@@ -501,10 +501,10 @@ class RealMCPProvider:
             try:
                 process.kill()
                 process.wait(timeout=1)
-            except Exception:
-                pass
-        except Exception:
-            pass
+            except Exception:  # noqa: BLE001 - process cleanup must continue through termination failures
+                return
+        except Exception:  # noqa: BLE001 - process cleanup is best effort after request completion
+            return
 
     # 把 JSON payload 写到子进程 stdin
     def _write_message(self, process: subprocess.Popen[bytes], payload: dict[str, Any]) -> None:
@@ -548,7 +548,7 @@ class RealMCPProvider:
         while True:
             try:
                 message = self._read_message(process)
-            except Exception:
+            except Exception:  # noqa: BLE001 - reader terminates when the child protocol fails
                 message = None
             if not message:
                 messages.put(None)

@@ -15,6 +15,8 @@ from app.benchmark_runner import (
     run_rag_benchmark,
     run_workflow_benchmark,
 )
+from app.core.security import audit_action, execution_auth_context
+from app.graphs.collaboration_runner import run_collaboration_task
 from app.graphs.project_analyzer_graph import project_analyzer_graph
 from app.graphs.studio_graphs import (
     code_review_graph,
@@ -22,7 +24,6 @@ from app.graphs.studio_graphs import (
     learning_coach_graph,
     rag_process_graph,
 )
-from app.graphs.collaboration_runner import run_collaboration_task
 from app.graphs.workflow_compiler import (
     resume_task_workflow,
     run_compiled_workflow,
@@ -32,17 +33,18 @@ from app.graphs.workflow_compiler import (
 from app.harness.events import utc_now_iso
 from app.harness.policy import tool_policy
 from app.harness.runtime import harness_runtime
-from app.core.security import audit_action, execution_auth_context
 from app.marketplace.catalog import marketplace_catalog
+from app.marketplace.installer import (
+    install_marketplace_package,
+    preview_marketplace_package,
+    uninstall_marketplace_package,
+)
 from app.persistence.memory_store import memory_store
-from app.marketplace.installer import install_marketplace_package, preview_marketplace_package, uninstall_marketplace_package
 from app.persistence.rag_store import rag_store
 from app.persistence.sqlite_store import task_store
 from app.providers.llm_provider import llm_provider
 from app.providers.mcp_provider import mcp_provider
 from app.schemas.project import ProjectAnalyzeRequest, ProjectAnalyzeResponse
-from app.skills.executor import ensure_builtin_skills_seeded, execute_skill
-from app.skills.sandbox import python_skill_sandbox_status
 from app.schemas.studio import (
     BenchmarkRunRequest,
     BenchmarkRunResponse,
@@ -54,16 +56,13 @@ from app.schemas.studio import (
     HumanReviewResponse,
     KnowledgeNoteRequest,
     KnowledgeNoteResponse,
-    LearningCoachRequest,
-    LearningCoachResponse,
     LearningChatRequest,
     LearningChatResponse,
+    LearningCoachRequest,
+    LearningCoachResponse,
     LearningPlanCreateRequest,
     LearningPlanResponse,
     LearningPlanStatusRequest,
-    MemoryConfirmRequest,
-    MemoryExtractRequest,
-    MemoryRecordResponse,
     McpFileListRequest,
     McpFileReadRequest,
     McpGitRequest,
@@ -72,19 +71,22 @@ from app.schemas.studio import (
     McpToolApprovalRequest,
     McpToolCallRequest,
     McpToolToggleRequest,
-    RagIngestRequest,
-    RagIngestResponse,
+    MemoryConfirmRequest,
+    MemoryExtractRequest,
+    MemoryRecordResponse,
     RagDocumentAclRequest,
     RagGoldCaseRequest,
+    RagIngestRequest,
+    RagIngestResponse,
     RagProcessRequest,
     RagProcessResponse,
     RagQueryRequest,
     RagQueryResponse,
     ReviewActionRequest,
     ReviewActionResponse,
-    TaskRunRequest,
     TaskQuestionRequest,
     TaskQuestionResponse,
+    TaskRunRequest,
     TaskRunResponse,
     ToolPermissionRequest,
     ToolPermissionResponse,
@@ -95,6 +97,9 @@ from app.schemas.studio import (
     WorkflowValidateRequest,
     WorkflowValidateResponse,
 )
+from app.skills.executor import ensure_builtin_skills_seeded, execute_skill
+from app.skills.sandbox import python_skill_sandbox_status
+
 # 文件本质
 # 1. 收前端请求
 # 2. 调之前学过的图/工具/Skill
@@ -138,7 +143,7 @@ async def analyze_project_stream(request: ProjectAnalyzeRequest) -> StreamingRes
                     "node": event.get("name", "graph"),
                 }
                 yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - API stream boundary serializes unexpected failures
             yield f"data: {json.dumps({'type': 'error', 'content': str(exc)}, ensure_ascii=False)}\n\n"
         finally:
             yield "data: {\"type\": \"complete\", \"completed\": true}\n\n"
@@ -441,7 +446,7 @@ def test_skill_api(skill_code: str, payload: dict[str, object]) -> dict[str, obj
         try:
             run = execute_skill(skill_code, case_input, agent_code=agent_code)
             results.append({"name": name, "status": "passed", "output": run.get("output"), "latency_ms": run.get("latency_ms")})
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - benchmark endpoint returns a per-case failure
             results.append({"name": name, "status": "failed", "error_message": str(exc)})
     return {
         "skill_code": skill_code,
@@ -867,6 +872,16 @@ def run_collaboration(request: CollaborationRequest) -> CollaborationResponse:
 @router.post("/tasks/run", response_model=TaskRunResponse, tags=["Task Runtime"])
 def run_task(request: TaskRunRequest) -> TaskRunResponse:
     workflow_payload = _resolve_task_workflow(request)
+    if request.idempotency_key:
+        existing = task_store.get_task_by_idempotency_key(request.idempotency_key)
+        if existing:
+            artifact = next((item for item in task_store.get_artifacts(existing["task_id"]) if item.get("name") == "result"), {})
+            return TaskRunResponse(
+                task_id=existing["task_id"],
+                status=existing["status"],
+                events=task_store.get_events(existing["task_id"]),
+                result=artifact.get("content") if isinstance(artifact.get("content"), dict) else {},
+            )
     # 1. 创建任务上下文
     context = harness_runtime.create_context(
         goal=request.goal,
@@ -876,10 +891,14 @@ def run_task(request: TaskRunRequest) -> TaskRunResponse:
             "require_human_review": request.require_human_review,
             "execution_mode": request.execution_mode,
             "workflow_id": request.workflow_id,
+            "idempotency_key": request.idempotency_key,
         },
     )
     try:
         # 2. 跑图（带治理）
+        if request.background:
+            harness_runtime.run_graph_async(context, run_task_workflow, workflow_payload)
+            return TaskRunResponse(task_id=context.task_id, status="queued", events=task_store.get_events(context.task_id), result={})
         result = harness_runtime.run_graph(context, run_task_workflow, workflow_payload)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -912,7 +931,7 @@ async def run_task_stream(request: TaskRunRequest) -> StreamingResponse:
                 "validation": response.result.get("validation"),
             }
             yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - API stream boundary serializes unexpected failures
             yield f"data: {json.dumps({'type': 'error', 'content': str(exc)}, ensure_ascii=False)}\n\n"
         finally:
             yield "data: {\"type\": \"complete\", \"completed\": true}\n\n"
@@ -969,7 +988,7 @@ async def run_collaboration_task_stream(request: TaskRunRequest) -> StreamingRes
                 "human_review_required": response.result.get("human_review_required"),
             }
             yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - API stream boundary serializes unexpected failures
             yield f"data: {json.dumps({'type': 'error', 'content': str(exc)}, ensure_ascii=False)}\n\n"
         finally:
             yield "data: {\"type\": \"complete\", \"completed\": true}\n\n"
@@ -978,8 +997,8 @@ async def run_collaboration_task_stream(request: TaskRunRequest) -> StreamingRes
 
 
 @router.get("/tasks", tags=["Task Runtime"])
-def list_tasks() -> dict[str, object]:
-    return {"tasks": task_store.list_tasks()}
+def list_tasks(limit: int = 100, offset: int = 0) -> dict[str, object]:
+    return {"tasks": task_store.list_tasks(limit=limit, offset=offset)}
 
 
 @router.get("/tasks/{task_id}", tags=["Task Runtime"])
@@ -1003,6 +1022,14 @@ def get_task_report(task_id: str) -> dict[str, object]:
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
     return {"task_id": task_id, "final_report": task.get("final_report")}
+
+
+@router.post("/tasks/{task_id}/cancel", tags=["Task Runtime"])
+def cancel_task(task_id: str) -> dict[str, object]:
+    if not task_store.get_task(task_id):
+        raise HTTPException(status_code=404, detail="Task not found")
+    harness_runtime.cancel_task(task_id)
+    return {"task_id": task_id, "status": "cancelled"}
 
 
 @router.post("/tasks/{task_id}/ask", response_model=TaskQuestionResponse, tags=["Task Runtime"])
@@ -1793,8 +1820,6 @@ def _learning_next_questions(request: LearningChatRequest, task: dict[str, objec
     )
     generated_questions = [line.strip("- 0123456789.、").strip() for line in result["text"].splitlines() if line.strip()]
     return {"questions": generated_questions[:3] or fallback_questions, "answer_source": result["answer_source"]}
-    questions = [line.strip("- 0123456789.、").strip() for line in text.splitlines() if line.strip()]
-    return questions[:3] or fallback_questions
 
 
 def _fallback_learning_next_questions(request: LearningChatRequest, task: dict[str, object] | None) -> list[str]:

@@ -20,6 +20,7 @@ env/
 
 # Runtime data, local databases and logs
 data/*.db
+data/*.db-*
 data/*.sqlite
 data/*.sqlite3
 .jaycode/

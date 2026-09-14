@@ -6,8 +6,8 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from app.harness.events import utc_now_iso
 from app.core.security import execution_auth_context
+from app.harness.events import utc_now_iso
 from app.persistence.sqlite_store import task_store
 
 
@@ -324,7 +324,7 @@ class LLMProvider:
                 "latency_ms": latency_ms,
                 "token_usage": token_usage,
             }
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - provider boundary records fallback and failure trace
             latency_ms = self._elapsed_ms(started)
             self._save_trace(
                 trace_id=trace_id,
@@ -821,8 +821,8 @@ class LLMProvider:
                     "created_at": utc_now_iso(),
                 }
             )
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - trace persistence must not mask the model result
+            self._last_trace_error = str(exc)
 
     def _elapsed_ms(self, started: float) -> int:
         return max(0, int((time.perf_counter() - started) * 1000))

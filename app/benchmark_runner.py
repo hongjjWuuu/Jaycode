@@ -7,13 +7,13 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from app.harness.events import utc_now_iso
-from app.persistence.sqlite_store import task_store
-from app.persistence.rag_store import rag_store
-from app.providers.llm_provider import llm_provider
-from app.providers.mcp_provider import mcp_provider
 from app.graphs.collaboration_runner import run_collaboration_task
 from app.graphs.workflow_compiler import run_compiled_workflow
+from app.harness.events import utc_now_iso
+from app.persistence.rag_store import rag_store
+from app.persistence.sqlite_store import task_store
+from app.providers.llm_provider import llm_provider
+from app.providers.mcp_provider import mcp_provider
 
 
 def default_mcp_benchmark_cases() -> list[dict[str, Any]]:
@@ -259,7 +259,7 @@ def _run_single_mcp_case(run_id: str, case: dict[str, Any], iteration: int, agen
         if output.get("status") == "failed":
             status = "failed"
             error_message = str(output.get("error_message") or "MCP tool returned failed status")
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - benchmark cases report isolated failures
         status = "failed"
         error_message = str(exc)
 
@@ -317,7 +317,7 @@ def _run_single_llm_case(run_id: str, case: dict[str, Any], iteration: int, agen
         if response.get("fallback_used"):
             status = "failed"
             error_message = str(response.get("error_message") or "LLM fallback was used")
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - benchmark cases report isolated failures
         status = "failed"
         error_message = str(exc)
     return _append_case_result(run_id, case, iteration, status, started, args, output, error_message, tool_name=str(args.get("prompt_version") or "llm.generate"))
@@ -373,7 +373,7 @@ def _run_single_rag_case(run_id: str, case: dict[str, Any], iteration: int, agen
         if not hit:
             status = "failed"
             error_message = "No expected path or keyword was retrieved"
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - benchmark cases report isolated failures
         status = "failed"
         error_message = str(exc)
     return _append_case_result(run_id, case, iteration, status, started, args, output, error_message, tool_name="rag.query")
@@ -413,7 +413,7 @@ def _run_single_workflow_case(run_id: str, case: dict[str, Any], iteration: int,
         if not success:
             status = "failed"
             error_message = f"Workflow failed nodes: {', '.join(failed_nodes) or 'none'}"
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - benchmark cases report isolated failures
         status = "failed"
         error_message = str(exc)
     return _append_case_result(run_id, case, iteration, status, started, args, output, error_message, tool_name="workflow.run")
@@ -460,7 +460,7 @@ def _run_single_collaboration_case(run_id: str, case: dict[str, Any], iteration:
         if not success:
             status = "failed"
             error_message = "Collaboration report did not meet completeness or risk coverage threshold"
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - benchmark cases report isolated failures
         status = "failed"
         error_message = str(exc)
     return _append_case_result(run_id, case, iteration, status, started, args, output, error_message, tool_name="collaboration.run")

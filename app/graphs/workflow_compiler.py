@@ -14,6 +14,7 @@ from app.persistence.rag_store import rag_store
 from app.providers.mcp_provider import mcp_provider
 from app.skills.executor import execute_skill
 
+
 # 这三个函数是 LangGraph 的状态更新策略。
 # Annotated 类型告诉 LangGraph："这个字段更新时，用这个函数处理新旧值"。
 # 列表追加（事件、工具调用累积）
@@ -381,11 +382,17 @@ def validate_workflow_definition(nodes: list[dict[str, Any]], edges: list[dict[s
         config = node.get("config") if isinstance(node.get("config"), dict) else {}
         retry_count = config.get("retry_count", 0)
         if not isinstance(retry_count, int) or retry_count < 0 or retry_count > 5:
-            warnings.append(f"Node `{node.get('id')}` retry_count should be between 0 and 5.")
+            errors.append(f"Node `{node.get('id')}` retry_count should be between 0 and 5.")
         if node.get("type") == "agent" and config.get("agent_type") == "file_reviewer" and not config.get("file_path"):
             warnings.append(f"File review node `{node.get('id')}` should set file_path.")
         if node.get("type") == "skill" and not config.get("skill_code"):
-            warnings.append(f"Skill node `{node.get('id')}` should set skill_code.")
+            errors.append(f"Skill node `{node.get('id')}` must set skill_code.")
+        input_mapping = config.get("input_mapping")
+        if input_mapping is not None and not isinstance(input_mapping, dict):
+            errors.append(f"Node `{node.get('id')}` input_mapping must be an object.")
+        output_schema = config.get("output_schema")
+        if output_schema is not None and not isinstance(output_schema, dict):
+            errors.append(f"Node `{node.get('id')}` output_schema must be an object.")
 
     seen_edges: set[tuple[str, str, str]] = set()
     for edge in normalized_edges:
@@ -415,13 +422,13 @@ def validate_workflow_definition(nodes: list[dict[str, Any]], edges: list[dict[s
     reachable = _reachable_nodes(node_ids[0] if node_ids else "", normalized_edges)
     disconnected = sorted(node_id_set - reachable)
     if disconnected:
-        warnings.append(f"Disconnected node(s): {', '.join(disconnected)}.")
+        errors.append(f"Disconnected node(s): {', '.join(disconnected)}.")
     if not any(node.get("type") == "reporter" for node in normalized_nodes):
         warnings.append("Workflow has no reporter node; final_report will be synthesized from node outputs.")
     
     # 检查是否有循环
     if _has_cycle(normalized_edges):
-        warnings.append("Workflow contains a cycle; make sure a conditional branch can terminate it.")
+        errors.append("Workflow contains a cycle and cannot be compiled safely.")
     parallel_sources = sorted(source for source, count in _fan_out_counts(normalized_edges).items() if count > 1)
     if parallel_sources:
         warnings.append(f"Parallel fan-out detected at: {', '.join(parallel_sources)}.")
@@ -483,7 +490,7 @@ def _node_runner(node: dict[str, Any], nodes: list[dict[str, Any]], edges: list[
                             {"attempt": attempt, "max_attempts": attempts},
                         )
                     )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - node boundary records and returns a failed node event
             update: WorkflowState = {
                 "events": [start_event, *retry_events, _event(state, node, "failed", str(exc))],
                 "outputs": {_output_key(node): {"error": str(exc), "status": "failed"}},

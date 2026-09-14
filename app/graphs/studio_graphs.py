@@ -6,9 +6,9 @@ from langgraph.graph import END, StateGraph
 
 from app.graphs.project_analyzer_graph import project_analyzer_graph
 from app.harness.events import utc_now_iso
+from app.providers.llm_provider import llm_provider
 from app.skills.base import SkillContext
 from app.skills.registry import skill_registry
-from app.providers.llm_provider import llm_provider
 
 # 共享状态
 #  Harness Runtime 里说的"统一管理全任务上下文"。

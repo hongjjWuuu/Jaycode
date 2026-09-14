@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 
-def collaborate(goal: str, project_path: Optional[str], require_human_review: bool) -> dict[str, Any]:
+def collaborate(goal: str, project_path: str | None, require_human_review: bool) -> dict[str, Any]:
     plan = [
         "Planner 解析目标并拆分任务",
         "Project Analyzer 分析项目结构",

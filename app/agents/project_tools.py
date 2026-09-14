@@ -150,7 +150,7 @@ def analyze_modules(scan: dict[str, Any]) -> list[str]:
     # 取顶层目录作为模块
     top_level = sorted({directory.split("/")[0] for directory in directories if "/" not in directory})
     for name in top_level[:20]:
-        modules.append(name)
+        modules.extend([name])
 
     # 对 Maven 项目，额外识别有 pom.xml 的子目录作为子模块
     maven_modules = [
@@ -174,7 +174,7 @@ def extract_api_hints(scan: dict[str, Any]) -> list[str]:
     hints: list[str] = []
     controller_files = [file["path"] for file in scan["files"] if "controller" in file["path"].lower()]
     for path in controller_files[:20]:
-        hints.append(path)
+        hints.extend([path])
     return hints
 
 # 风险和建议生成

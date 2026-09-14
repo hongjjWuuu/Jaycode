@@ -1,0 +1,31 @@
+name: Jaycode quality
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[dev,vector]"
+      - run: python -m pip install pip-audit
+      - run: pip-audit
+      - run: ruff check app tests
+      - run: pytest -q tests
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci
+        working-directory: web
+      - run: npm run build
+        working-directory: web
+      - name: Scan legacy markers
+        shell: bash
+        run: |
+          ! grep -RniE 'F:/JayAgent/Jaycode|F:\\JayAgent\\Jaycode|DevAgent|devagent|x_devagent' README.md docs app web/src examples scripts tests

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 import re
 import stat
 import tempfile
@@ -12,13 +12,12 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from app.marketplace.catalog import get_builtin_manifest
 from app.core.config import settings
+from app.marketplace.catalog import get_builtin_manifest
 from app.persistence.rag_store import rag_store
 from app.persistence.sqlite_store import task_store
 from app.providers.llm_provider import llm_provider
 from app.skills.contract import validate_skill_contract
-
 
 # 接收外部插件包
 # - 支持 `plugin.json`
@@ -70,7 +69,7 @@ def install_marketplace_package(source_url: str) -> dict[str, Any]:
         summary = _apply_manifest(manifest)
         status = "installed"
         error_message = None
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - persist failed installation status before re-raising
         status = "failed"
         error_message = str(exc)
     record = task_store.save_marketplace_install(
@@ -404,7 +403,7 @@ def _load_remote_manifest(url: str) -> dict[str, Any]:
     with tempfile.TemporaryDirectory() as temp_dir:
         target = Path(temp_dir) / "package"
         lower_url = url.lower()
-        if lower_url.endswith(".json") or lower_url.endswith("/plugin.json"):
+        if lower_url.endswith((".json", "/plugin.json")):
             data = _download_bytes(url)
             return json.loads(data.decode("utf-8"))
         if lower_url.endswith("skill.md"):
@@ -597,7 +596,7 @@ def _skill_md_description(content: str, title: str) -> str:
                 break
     for raw_line in lines:
         line = raw_line.strip()
-        if not line or line.startswith("#") or line.startswith("---"):
+        if not line or line.startswith(("#", "---")):
             continue
         return line[:280]
     return f"External Skill imported from SKILL.md: {title}"

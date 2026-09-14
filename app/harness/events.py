@@ -5,7 +5,6 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
 
-
 BEIJING_TZ = timezone(timedelta(hours=8))
 BEIJING_TIME_FORMAT = "%Y-%m-%d, %H:%M"
 

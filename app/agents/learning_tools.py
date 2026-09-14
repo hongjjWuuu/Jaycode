@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 
-def build_learning_plan(topic: str, level: str, days: int, goal: Optional[str]) -> dict[str, Any]:
+def build_learning_plan(topic: str, level: str, days: int, goal: str | None) -> dict[str, Any]:
     phases = _phases(level)
     plan = []
     for day in range(1, days + 1):
@@ -37,7 +37,7 @@ def _phases(level: str) -> list[str]:
     return ["基础入门", "最小 demo", "案例练习", "总结复盘"]
 
 
-def _report(topic: str, level: str, days: int, goal: Optional[str], plan: list[dict[str, Any]], quiz: list[dict[str, str]]) -> str:
+def _report(topic: str, level: str, days: int, goal: str | None, plan: list[dict[str, Any]], quiz: list[dict[str, str]]) -> str:
     goal_text = goal or "掌握基础能力并能完成一个小型项目"
     plan_text = "\n".join(
         f"- Day {item['day']}: {item['theme']}，产出：{item['output']}" for item in plan

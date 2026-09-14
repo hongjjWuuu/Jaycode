@@ -4,9 +4,9 @@ import time
 from typing import Any
 from uuid import uuid4
 
-from app.harness.events import utc_now_iso
 from app.core.config import settings
 from app.core.security import execution_auth_context
+from app.harness.events import utc_now_iso
 from app.persistence.rag_store import rag_store
 from app.persistence.sqlite_store import task_store
 from app.providers.llm_provider import llm_provider
@@ -15,6 +15,7 @@ from app.skills.builtin import builtin_plugin
 from app.skills.contract import validate_skill_contract
 from app.skills.registry import skill_registry
 from app.skills.sandbox import python_skill_sandbox_status, run_python_skill_sandbox
+
 
 # 先把内置 Skill 写入数据库，保证外部能查到
 # 光有内存里的 skill_registry 还不够

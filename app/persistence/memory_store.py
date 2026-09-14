@@ -347,9 +347,7 @@ def _extract_with_rules(clean: str) -> list[dict[str, Any]]:
     if not any(signal in clean for signal in signals):
         return []
     key = "general_preference"
-    if "中文" in clean:
-        key = "language"
-    elif "英文" in clean:
+    if "中文" in clean or "英文" in clean:
         key = "language"
     elif any(term in clean for term in ("安全", "风险", "漏洞")):
         key = "risk_focus"

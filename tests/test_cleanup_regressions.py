@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 SCANNED_ROOTS = ("README.md", "docs", "app", "web/src", "examples", "scripts", "tests")
 FORBIDDEN_MARKERS = (

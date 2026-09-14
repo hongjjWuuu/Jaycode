@@ -22,8 +22,11 @@ class SQLiteTaskStore:
         self._init_schema()
 
     def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=10)
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA busy_timeout = 10000")
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("PRAGMA journal_mode = WAL")
         return conn
 
     def _init_schema(self) -> None:
@@ -45,6 +48,10 @@ class SQLiteTaskStore:
             self._ensure_column(conn, "agent_task", "request_id", "TEXT")
             self._ensure_column(conn, "agent_task", "actor_id", "TEXT")
             self._ensure_column(conn, "agent_task", "role", "TEXT")
+            self._ensure_column(conn, "agent_task", "idempotency_key", "TEXT")
+            self._ensure_column(conn, "agent_task", "execution_version", "INTEGER NOT NULL DEFAULT 1")
+            self._ensure_column(conn, "agent_task", "retry_count", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(conn, "agent_task", "resume_count", "INTEGER NOT NULL DEFAULT 0")
             # 任务事件流
             conn.execute(
                 """
@@ -228,6 +235,10 @@ class SQLiteTaskStore:
                 )
                 """
             )
+            self._ensure_column(conn, "agent_task_event", "event_seq", "INTEGER")
+            self._ensure_column(conn, "agent_task_event", "execution_version", "INTEGER NOT NULL DEFAULT 1")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_task_event_task_created ON agent_task_event(task_id, created_at)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_task_event_event_id ON agent_task_event(event_id)")
             self._ensure_column(conn, "mcp_tool_call_log", "request_id", "TEXT")
             self._ensure_column(conn, "mcp_tool_call_log", "actor_id", "TEXT")
             self._ensure_column(conn, "mcp_tool_call_log", "role", "TEXT")
@@ -389,6 +400,8 @@ class SQLiteTaskStore:
                 )
                 """
             )
+            self._ensure_column(conn, "agent_task_artifact", "execution_version", "INTEGER NOT NULL DEFAULT 1")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_task_artifact_task_created ON agent_task_artifact(task_id, created_at)")
             self._ensure_column(conn, "plugin_marketplace_install", "approval_status", "TEXT NOT NULL DEFAULT 'approved'")
             self._ensure_column(conn, "plugin_marketplace_install", "approved_by", "TEXT")
             self._ensure_column(conn, "plugin_marketplace_install", "approved_at", "TEXT")
@@ -412,16 +425,22 @@ class SQLiteTaskStore:
 
     # 不是“简单建表”，而是考虑了 schema 演进 这说明项目已经把“版本兼容”当成架构的一部分。
     # 四个方法构成了任务治理的基础动作： 创建任务 更新状态 写事件 存产物
-    def create_task(self, task_id: str, goal: str, project_path: str | None, status: str, context: dict[str, Any] | None = None) -> None:
+    def create_task(self, task_id: str, goal: str, project_path: str | None, status: str, context: dict[str, Any] | None = None) -> dict[str, Any] | None:
         now = utc_now_iso()
         with self._connect() as conn:
+            idempotency_key = (context or {}).get("idempotency_key")
+            if idempotency_key:
+                existing = conn.execute("SELECT * FROM agent_task WHERE idempotency_key = ?", (idempotency_key,)).fetchone()
+                if existing:
+                    return dict(existing)
             conn.execute(
                 """
-                INSERT OR REPLACE INTO agent_task(task_id, goal, project_path, status, created_at, updated_at, request_id, actor_id, role)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT OR REPLACE INTO agent_task(task_id, goal, project_path, status, created_at, updated_at, request_id, actor_id, role, idempotency_key, execution_version, retry_count, resume_count)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (task_id, goal, project_path, status, now, now, (context or {}).get("request_id"), (context or {}).get("actor_id"), (context or {}).get("role")),
+                (task_id, goal, project_path, status, now, now, (context or {}).get("request_id"), (context or {}).get("actor_id"), (context or {}).get("role"), idempotency_key, 1, 0, 0),
             )
+        return None
 
     def save_security_audit(self, record: dict[str, Any]) -> dict[str, Any]:
         audit = {
@@ -483,27 +502,33 @@ class SQLiteTaskStore:
             result.append(item)
         return result
 
-    def update_task(self, task_id: str, status: str, final_report: str | None = None) -> None:
+    def update_task(self, task_id: str, status: str, final_report: str | None = None, *, retry: bool = False, resume: bool = False) -> None:
         now = utc_now_iso()
         with self._connect() as conn:
             conn.execute(
                 """
                 UPDATE agent_task
-                SET status = ?, final_report = COALESCE(?, final_report), updated_at = ?
+                SET status = ?, final_report = COALESCE(?, final_report), updated_at = ?,
+                    retry_count = retry_count + ?, resume_count = resume_count + ?,
+                    execution_version = execution_version + 1
                 WHERE task_id = ?
                 """,
-                (status, final_report, now, task_id),
+                (status, final_report, now, int(retry), int(resume), task_id),
             )
 
     def append_event(self, event: dict[str, Any]) -> None:
         event_id = event.get("event_id") or f"evt_{event['task_id']}_{event.get('node') or 'event'}_{utc_now_iso()}"
         with self._connect() as conn:
+            existing = conn.execute("SELECT 1 FROM agent_task_event WHERE event_id = ?", (event_id,)).fetchone()
+            if existing:
+                return
+            sequence = conn.execute("SELECT COALESCE(MAX(event_seq), 0) + 1 FROM agent_task_event WHERE task_id = ?", (event["task_id"],)).fetchone()[0]
             conn.execute(
                 """
                 INSERT INTO agent_task_event(
-                    event_id, task_id, event_type, node, agent, status, content, data_json, created_at
+                    event_id, task_id, event_type, node, agent, status, content, data_json, created_at, event_seq, execution_version
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     event_id,
@@ -515,6 +540,8 @@ class SQLiteTaskStore:
                     event.get("content"),
                     json.dumps(event.get("data", {}), ensure_ascii=False),
                     event.get("timestamp") or utc_now_iso(),
+                    sequence,
+                    int(event.get("execution_version") or 1),
                 ),
             )
 
@@ -522,20 +549,22 @@ class SQLiteTaskStore:
         with self._connect() as conn:
             conn.execute(
                 """
-                INSERT INTO agent_task_artifact(task_id, artifact_type, name, content_json, created_at)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO agent_task_artifact(task_id, artifact_type, name, content_json, created_at, execution_version)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (task_id, artifact_type, name, json.dumps(content, ensure_ascii=False), utc_now_iso()),
+                (task_id, artifact_type, name, json.dumps(content, ensure_ascii=False), utc_now_iso(), 1),
             )
 
-    def list_tasks(self) -> list[dict[str, Any]]:
+    def list_tasks(self, limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
         with self._connect() as conn:
             rows = conn.execute(
                 """
-                SELECT task_id, goal, project_path, status, created_at, updated_at, final_report
+                SELECT task_id, goal, project_path, status, created_at, updated_at, final_report, request_id, actor_id, role, idempotency_key, execution_version, retry_count, resume_count
                 FROM agent_task
                 ORDER BY created_at DESC
+                LIMIT ? OFFSET ?
                 """
+                , (max(1, min(limit, 1000)), max(0, offset))
             ).fetchall()
         return [dict(row) for row in rows]
 
@@ -543,13 +572,28 @@ class SQLiteTaskStore:
         with self._connect() as conn:
             row = conn.execute(
                 """
-                SELECT task_id, goal, project_path, status, created_at, updated_at, final_report
+                SELECT task_id, goal, project_path, status, created_at, updated_at, final_report, request_id, actor_id, role, idempotency_key, execution_version, retry_count, resume_count
                 FROM agent_task
                 WHERE task_id = ?
                 """,
                 (task_id,),
             ).fetchone()
         return dict(row) if row else None
+
+    def get_task_by_idempotency_key(self, idempotency_key: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM agent_task WHERE idempotency_key = ?", (idempotency_key,)).fetchone()
+        return dict(row) if row else None
+
+    def is_task_cancelled(self, task_id: str) -> bool:
+        with self._connect() as conn:
+            row = conn.execute("SELECT status FROM agent_task WHERE task_id = ?", (task_id,)).fetchone()
+        return bool(row and row["status"] == "cancelled")
+
+    def is_task_failed(self, task_id: str) -> bool:
+        with self._connect() as conn:
+            row = conn.execute("SELECT status FROM agent_task WHERE task_id = ?", (task_id,)).fetchone()
+        return bool(row and row["status"] == "failed")
 
     def get_events(self, task_id: str) -> list[dict[str, Any]]:
         with self._connect() as conn:

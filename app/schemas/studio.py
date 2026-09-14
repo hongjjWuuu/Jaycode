@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -85,7 +85,7 @@ class LearningCoachRequest(BaseModel):
     topic: str = Field(..., description="Learning topic")
     level: str = Field(default="beginner", description="beginner/intermediate/advanced")
     days: int = Field(default=7, ge=1, le=60)
-    goal: Optional[str] = None
+    goal: str | None = None
 
 
 class LearningCoachResponse(BaseModel):
@@ -101,8 +101,8 @@ class LearningPlanCreateRequest(BaseModel):
     topic: str
     level: str = "beginner"
     days: int = Field(default=7, ge=1, le=60)
-    goal: Optional[str] = None
-    comment: Optional[str] = None
+    goal: str | None = None
+    comment: str | None = None
 
 
 class LearningPlanRecord(BaseModel):
@@ -158,10 +158,10 @@ class McpServerConfigRequest(BaseModel):
     server_id: str
     name: str
     transport: str = "stdio"
-    command: Optional[str] = None
+    command: str | None = None
     args: list[str] = Field(default_factory=list)
     env: dict[str, str] = Field(default_factory=dict)
-    url: Optional[str] = None
+    url: str | None = None
     enabled: bool = False
 
 
@@ -178,11 +178,11 @@ class McpToolApprovalRequest(BaseModel):
     server_id: str
     tool_name: str
     allowed: bool
-    reason: Optional[str] = None
+    reason: str | None = None
 
 
 class McpToolCallRequest(BaseModel):
-    server_id: Optional[str] = None
+    server_id: str | None = None
     tool_name: str
     arguments: dict[str, Any] = Field(default_factory=dict)
     agent_code: str = "workflow_runner"
@@ -190,7 +190,7 @@ class McpToolCallRequest(BaseModel):
 
 class BenchmarkCase(BaseModel):
     case_id: str
-    server_id: Optional[str] = None
+    server_id: str | None = None
     tool_name: str
     arguments: dict[str, Any] = Field(default_factory=dict)
     enabled: bool = True
@@ -218,8 +218,8 @@ class WorkflowEdge(BaseModel):
     source: str
     target: str
     condition: str = "always"
-    value: Optional[str] = None
-    source_path: Optional[str] = None
+    value: str | None = None
+    source_path: str | None = None
 
 
 class WorkflowRunRequest(BaseModel):
@@ -252,7 +252,7 @@ class WorkflowRunResponse(BaseModel):
 class WorkflowSaveRequest(BaseModel):
     workflow_id: str = Field(default_factory=lambda: f"wf_{uuid4().hex[:12]}")
     name: str = "Untitled Workflow"
-    description: Optional[str] = None
+    description: str | None = None
     nodes: list[dict[str, Any]] = Field(default_factory=list)
     edges: list[dict[str, Any]] = Field(default_factory=list)
 
@@ -260,7 +260,7 @@ class WorkflowSaveRequest(BaseModel):
 class WorkflowRecord(BaseModel):
     workflow_id: str
     name: str
-    description: Optional[str] = None
+    description: str | None = None
     nodes: list[dict[str, Any]]
     edges: list[dict[str, Any]]
     created_at: str
@@ -272,14 +272,14 @@ class WorkflowSaveResponse(BaseModel):
 
 
 class HumanReviewRequest(BaseModel):
-    comment: Optional[str] = None
+    comment: str | None = None
 
 
 class HumanReviewResponse(BaseModel):
     task_id: str
     status: str
     action: str
-    comment: Optional[str] = None
+    comment: str | None = None
 
 
 class TaskQuestionRequest(BaseModel):
@@ -297,7 +297,7 @@ class TaskQuestionResponse(BaseModel):
 
 class ReviewActionRequest(BaseModel):
     action: str
-    comment: Optional[str] = None
+    comment: str | None = None
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -325,7 +325,7 @@ class MemoryExtractRequest(BaseModel):
     scope: str = "user"
     scope_id: str = "local-user"
     source_type: str = "conversation"
-    source_ref: Optional[str] = None
+    source_ref: str | None = None
 
 
 class MemoryRecordResponse(BaseModel):
@@ -338,46 +338,46 @@ class MemoryRecordResponse(BaseModel):
     confidence: float
     status: str
     source_type: str
-    source_ref: Optional[str] = None
+    source_ref: str | None = None
     extraction_source: str = "rule_fallback"
     quality_score: float = 0
     quality_reasons: str = "[]"
     retention_policy: str = "review_90d"
-    expires_at: Optional[str] = None
-    conflict_with: Optional[str] = None
-    rag_path: Optional[str] = None
+    expires_at: str | None = None
+    conflict_with: str | None = None
+    rag_path: str | None = None
     created_at: str
     updated_at: str
-    confirmed_at: Optional[str] = None
+    confirmed_at: str | None = None
     duplicate: bool = False
 
 
 class MemoryConfirmRequest(BaseModel):
-    collection: Optional[str] = None
+    collection: str | None = None
 
 
 class LearningChatRequest(BaseModel):
     topic: str = "Jaycode"
     level: str = "beginner"
     question: str
-    answer: Optional[str] = None
-    task_id: Optional[str] = None
+    answer: str | None = None
+    task_id: str | None = None
     turn: int = 0
-    day: Optional[int] = None
-    theme: Optional[str] = None
+    day: int | None = None
+    theme: str | None = None
 
 
 class LearningChatResponse(BaseModel):
     reply: str
     next_questions: list[str]
     answer_source: str = "fallback"
-    day: Optional[int] = None
-    theme: Optional[str] = None
+    day: int | None = None
+    theme: str | None = None
 
 
 class CollaborationRequest(BaseModel):
     goal: str
-    project_path: Optional[str] = None
+    project_path: str | None = None
     require_human_review: bool = True
 
 
@@ -387,21 +387,23 @@ class CollaborationResponse(BaseModel):
     worker_results: list[dict[str, str]]
     supervisor_notes: list[str]
     human_review_required: bool
-    human_review_packet: Optional[dict[str, Any]]
+    human_review_packet: dict[str, Any] | None
     final_report: str
 
 
 class TaskRunRequest(BaseModel):
     goal: str
-    project_path: Optional[str] = None
+    project_path: str | None = None
     max_files: int = Field(default=500, ge=1, le=5000)
     require_human_review: bool = True
     execution_mode: str = Field(default="workflow", description="workflow/agent/tool/knowledge")
-    workflow_id: Optional[str] = None
-    workflow_name: Optional[str] = None
-    input_text: Optional[str] = None
+    workflow_id: str | None = None
+    workflow_name: str | None = None
+    input_text: str | None = None
     nodes: list[WorkflowNode] = Field(default_factory=list)
     edges: list[WorkflowEdge] = Field(default_factory=list)
+    idempotency_key: str | None = Field(default=None, max_length=160)
+    background: bool = False
 
 
 class TaskRunResponse(BaseModel):

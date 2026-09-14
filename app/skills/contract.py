@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 from typing import Any
 
-
 ALLOWED_EXECUTION_TYPES = {"agent", "prompt", "rule", "python"}
 ALLOWED_SCHEMA_TYPES = {"string", "number", "integer", "boolean", "object", "array", "null"}
 ALLOWED_DEPENDENCY_TYPES = {"mcp_tool", "rag_collection", "prompt_version", "llm_model", "skill"}

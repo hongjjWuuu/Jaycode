@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from app.skills.base import Skill, SkillContext
 from typing import Any
 
+from app.skills.base import Skill, SkillContext
 from app.skills.builtin import builtin_plugin, builtin_skills
 
 

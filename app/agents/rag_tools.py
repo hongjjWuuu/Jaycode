@@ -15,7 +15,7 @@ def process_knowledge(project_path: str, max_files: int) -> dict[str, Any]:
     scan = scan_project(project_path, max_files)
     root = Path(scan["root"])
     documents: list[dict[str, Any]] = []
-    chunks: list[dict[str, str]] = []
+    chunks: list[dict[str, Any]] = []
     file_stats: list[dict[str, Any]] = []
 
     for file in scan["files"]:
@@ -70,13 +70,24 @@ def _safe_read(path: Path) -> str:
         return ""
 
 
-def _chunk_text(path: str, text: str, chunk_size: int = 900) -> list[dict[str, str]]:
+def _chunk_text(path: str, text: str, chunk_size: int = 900) -> list[dict[str, Any]]:
     normalized = re.sub(r"\n{3,}", "\n\n", text.strip())
     chunks: list[dict[str, str]] = []
     for index in range(0, len(normalized), chunk_size):
         content = normalized[index : index + chunk_size].strip()
         if len(content) >= 80:
-            chunks.append({"path": path, "chunk_id": f"{path}#{len(chunks) + 1}", "content": content})
+            suffix = Path(path).suffix.lower().lstrip(".") or "text"
+            chunks.append({
+                "path": path,
+                "chunk_id": f"{path}#{len(chunks) + 1}",
+                "content": content,
+                "metadata": {
+                    "language": suffix,
+                    "module_name": Path(path).stem,
+                    "line_start": normalized[:index].count("\n") + 1,
+                    "line_end": normalized[: index + len(content)].count("\n") + 1,
+                },
+            })
     return chunks
 
 
