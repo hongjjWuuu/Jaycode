@@ -220,6 +220,8 @@ JAYCODE_AGENT_LLM=<your-model-name>
 
 不要将真实 `.env` 提交到 Git。
 
+本地开发如需保持免认证模式，必须在 `.env` 中显式设置 `JAYCODE_AUTH_ENABLED=false`；生产环境保持认证开启，并配置 `JAYCODE_API_KEYS`，格式为 `key:role`，角色可选 `user`、`reviewer`、`admin`。Marketplace 远程包默认关闭，MCP stdio command 也必须配置在 `JAYCODE_MCP_ALLOWED_COMMANDS` 白名单中。
+
 ### 4. 启动后端
 
 ```powershell

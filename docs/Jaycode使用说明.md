@@ -40,7 +40,7 @@ Jaycode 前端不是单纯的展示页面，而是一个围绕“任务、执行
 最简单的启动方式：
 
 ```powershell
-cd F:\JayAgent\Jaycode
+cd .
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8100
 ```
 
@@ -53,7 +53,7 @@ http://127.0.0.1:8100/
 推荐使用一键启动：
 
 ```powershell
-cd F:\JayAgent\Jaycode
+cd .
 powershell -ExecutionPolicy Bypass -File .\setup-and-start.ps1
 ```
 
@@ -73,7 +73,7 @@ powershell -ExecutionPolicy Bypass -File .\setup-and-start.ps1
 如果你需要修改 React 页面，可以单独启动 Vite：
 
 ```powershell
-cd F:\JayAgent\Jaycode\web
+cd web
 npm install
 npm run dev -- --host 127.0.0.1 --port 5173
 ```
@@ -109,8 +109,8 @@ http://127.0.0.1:8100/docs
 检查前端产物：
 
 ```powershell
-Test-Path F:\JayAgent\Jaycode\web\dist\index.html
-Test-Path F:\JayAgent\Jaycode\web\dist\assets
+Test-Path web\dist\index.html
+Test-Path web\dist\assets
 ```
 
 如果页面能打开但样式异常，通常说明前端构建未完成、浏览器缓存过旧，或者 `web\src\styles.css` 的改动还没有重新打包进 `web\dist`。
@@ -494,13 +494,13 @@ Knowledge 模式用于知识检索。
 例如：
 
 ```text
-F:/JayAgent/Jaycode
+.
 ```
 
 建议使用正斜杠，或者使用完整 Windows 路径：
 
 ```text
-F:\JayAgent\Jaycode
+.
 ```
 
 ### 6.3 最大扫描文件数
@@ -1072,7 +1072,7 @@ threshold 是允许的变化范围。
 3. 项目路径填写：
 
 ```text
-F:/JayAgent/Jaycode
+.
 ```
 
 4. 最大扫描文件数设置为 `200`
@@ -1097,8 +1097,8 @@ F:/JayAgent/Jaycode
 检查：
 
 ```powershell
-Test-Path F:\JayAgent\Jaycode\web\dist\index.html
-Test-Path F:\JayAgent\Jaycode\web\dist\assets
+Test-Path web\dist\index.html
+Test-Path web\dist\assets
 ```
 
 然后强制刷新浏览器。

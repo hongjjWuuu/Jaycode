@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import hashlib
 import re
+import stat
 import tempfile
 import urllib.parse
 import urllib.request
@@ -12,6 +13,7 @@ from typing import Any
 from uuid import uuid4
 
 from app.marketplace.catalog import get_builtin_manifest
+from app.core.config import settings
 from app.persistence.rag_store import rag_store
 from app.persistence.sqlite_store import task_store
 from app.providers.llm_provider import llm_provider
@@ -266,6 +268,8 @@ def _validate_manifest(manifest: dict[str, Any]) -> None:
     package_type = str(manifest.get("package_type") or "")
     if package_type not in SUPPORTED_PACKAGE_TYPES:
         raise ValueError(f"Unsupported package_type: {package_type}")
+    if manifest.get("_remote") and settings.jaycode_marketplace_require_signature and not manifest.get("signature"):
+        raise ValueError("Remote marketplace packages require a SHA-256 signature")
     _verify_manifest_signature(manifest)
     if package_type == "skill_pack":
         skills = manifest.get("skills") or []
@@ -305,6 +309,7 @@ def _verify_manifest_signature(manifest: dict[str, Any]) -> None:
         not in {
             "signature",
             "source_url",
+            "_remote",
             "_package_root",
             "_contract_verified",
             "_signature_verified",
@@ -336,8 +341,21 @@ def _load_manifest(source_url: str) -> dict[str, Any]:
         manifest["source_url"] = path.as_posix()
         return manifest
     if source.startswith(("http://", "https://")):
+        parsed = urllib.parse.urlparse(source)
+        if not settings.jaycode_marketplace_remote_enabled:
+            raise PermissionError("Remote marketplace installation is disabled")
+        if parsed.scheme.lower() != "https":
+            raise PermissionError("Remote marketplace sources must use HTTPS")
+        allowed_hosts = {
+            item.strip().lower()
+            for item in settings.jaycode_marketplace_allowed_hosts.split(",")
+            if item.strip()
+        }
+        if parsed.hostname is None or parsed.hostname.lower() not in allowed_hosts:
+            raise PermissionError("Marketplace host is not allowlisted")
         manifest = _load_remote_manifest(source)
         manifest["source_url"] = source
+        manifest["_remote"] = True
         return manifest
     raise FileNotFoundError(f"Unsupported marketplace source: {source}")
 
@@ -350,7 +368,7 @@ def _load_local_manifest(path: Path) -> dict[str, Any]:
     if manifest_path.suffix.lower() == ".zip":
         with tempfile.TemporaryDirectory() as temp_dir:
             with zipfile.ZipFile(manifest_path) as archive:
-                archive.extractall(temp_dir)
+                _safe_extract(archive, Path(temp_dir))
             return _find_manifest(Path(temp_dir))
     if manifest_path.is_dir() or not manifest_path.exists():
         manifest = _find_manifest(path)
@@ -380,7 +398,7 @@ def _load_remote_manifest(url: str) -> dict[str, Any]:
         zip_path = target.with_suffix(".zip")
         zip_path.write_bytes(data)
         with zipfile.ZipFile(zip_path) as archive:
-            archive.extractall(target)
+            _safe_extract(archive, target)
         manifest = _find_manifest(target)
         _attach_package_root(manifest, target)
         return manifest
@@ -394,9 +412,44 @@ def _attach_package_root(manifest: dict[str, Any], package_root: Path) -> None:
 
 
 def _download_bytes(url: str) -> bytes:
-    request = urllib.request.Request(url, headers={"User-Agent": "DevAgent-Studio-Marketplace/1.0"})
+    request = urllib.request.Request(url, headers={"User-Agent": "Jaycode-Studio-Marketplace/1.0"})
+    limit = max(1, settings.jaycode_marketplace_max_download_bytes)
+    chunks: list[bytes] = []
+    total = 0
     with urllib.request.urlopen(request, timeout=30) as response:
-        return response.read()
+        while True:
+            chunk = response.read(min(1024 * 1024, limit - total + 1))
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > limit:
+                raise ValueError("Marketplace download exceeds configured size limit")
+            chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def _safe_extract(archive: zipfile.ZipFile, destination: Path) -> None:
+    destination = destination.resolve()
+    max_files = max(1, settings.jaycode_marketplace_max_files)
+    max_bytes = max(1, settings.jaycode_marketplace_max_extracted_bytes)
+    infos = archive.infolist()
+    if len(infos) > max_files:
+        raise ValueError("Marketplace archive contains too many files")
+    total_bytes = 0
+    for info in infos:
+        member = Path(info.filename)
+        if member.is_absolute() or ".." in member.parts:
+            raise ValueError(f"Unsafe marketplace archive path: {info.filename}")
+        mode = (info.external_attr >> 16) & 0xFFFF
+        if stat.S_ISLNK(mode) or stat.S_ISCHR(mode) or stat.S_ISBLK(mode) or stat.S_ISFIFO(mode):
+            raise ValueError(f"Unsupported marketplace archive entry: {info.filename}")
+        total_bytes += max(0, int(info.file_size))
+        if total_bytes > max_bytes:
+            raise ValueError("Marketplace archive exceeds configured extracted size limit")
+        target = (destination / member).resolve()
+        if target != destination and destination not in target.parents:
+            raise ValueError(f"Unsafe marketplace archive path: {info.filename}")
+    archive.extractall(destination)
 
 
 def _github_zip_url(url: str) -> str | None:

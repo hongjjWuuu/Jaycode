@@ -77,7 +77,7 @@ React Web
 
 关键文件：
 
-- [app/persistence/sqlite_store.py](F:/JayAgent/Jaycode/app/persistence/sqlite_store.py)
+- [app/persistence/sqlite_store.py](../app/persistence/sqlite_store.py)
 
 这个文件不是简单的数据层，而是整个项目的“事实仓库”。  
 它把任务、事件、产物、工作流、技能、MCP、LLM、Benchmark 都存到同一个治理型数据库里。
@@ -183,11 +183,11 @@ Benchmark 不是临时脚本，而是可保存、可对比、可复跑的评测�
 
 关键文件：
 
-- [web/src/App.tsx](F:/JayAgent/Jaycode/web/src/App.tsx)
-- [web/src/api.ts](F:/JayAgent/Jaycode/web/src/api.ts)
-- [web/src/types.ts](F:/JayAgent/Jaycode/web/src/types.ts)
-- [web/src/main.tsx](F:/JayAgent/Jaycode/web/src/main.tsx)
-- [web/src/styles.css](F:/JayAgent/Jaycode/web/src/styles.css)
+- [web/src/App.tsx](../web/src/App.tsx)
+- [web/src/api.ts](../web/src/api.ts)
+- [web/src/types.ts](../web/src/types.ts)
+- [web/src/main.tsx](../web/src/main.tsx)
+- [web/src/styles.css](../web/src/styles.css)
 
 #### 你要补的认知
 
@@ -247,9 +247,9 @@ Benchmark 不是临时脚本，而是可保存、可对比、可复跑的评测�
 
 关键文件：
 
-- [app/persistence/rag_store.py](F:/JayAgent/Jaycode/app/persistence/rag_store.py)
-- [app/agents/rag_tools.py](F:/JayAgent/Jaycode/app/agents/rag_tools.py)
-- [docs/PHASE_7_PGVECTOR_RAG.md](F:/JayAgent/Jaycode/docs/PHASE_7_PGVECTOR_RAG.md)
+- [app/persistence/rag_store.py](../app/persistence/rag_store.py)
+- [app/agents/rag_tools.py](../app/agents/rag_tools.py)
+- [治理化 RAG 说明](亮点补充/治理化 RAG（区别于 Demo 级简易检索）.md)
 
 #### 你要补的核心认识
 
@@ -317,8 +317,8 @@ RAG 的核心不是“查得到”，而是：
 
 关键文件：
 
-- [app/persistence/memory_store.py](F:/JayAgent/Jaycode/app/persistence/memory_store.py)
-- [tests/test_memory_store.py](F:/JayAgent/Jaycode/tests/test_memory_store.py)
+- [app/persistence/memory_store.py](../app/persistence/memory_store.py)
+- [app/persistence/memory_store.py](../app/persistence/memory_store.py)
 
 #### 你要补的核心认识
 
@@ -390,14 +390,14 @@ Memory 存的不是项目知识，而是：
 
 关键文件：
 
-- [app/skills/base.py](F:/JayAgent/Jaycode/app/skills/base.py)
-- [app/skills/contract.py](F:/JayAgent/Jaycode/app/skills/contract.py)
-- [app/skills/builtin.py](F:/JayAgent/Jaycode/app/skills/builtin.py)
-- [app/skills/registry.py](F:/JayAgent/Jaycode/app/skills/registry.py)
-- [app/skills/executor.py](F:/JayAgent/Jaycode/app/skills/executor.py)
-- [app/skills/sandbox.py](F:/JayAgent/Jaycode/app/skills/sandbox.py)
-- [app/marketplace/installer.py](F:/JayAgent/Jaycode/app/marketplace/installer.py)
-- [app/marketplace/catalog.py](F:/JayAgent/Jaycode/app/marketplace/catalog.py)
+- [app/skills/base.py](../app/skills/base.py)
+- [app/skills/contract.py](../app/skills/contract.py)
+- [app/skills/builtin.py](../app/skills/builtin.py)
+- [app/skills/registry.py](../app/skills/registry.py)
+- [app/skills/executor.py](../app/skills/executor.py)
+- [app/skills/sandbox.py](../app/skills/sandbox.py)
+- [app/marketplace/installer.py](../app/marketplace/installer.py)
+- [app/marketplace/catalog.py](../app/marketplace/catalog.py)
 
 #### 你要补的完整链路
 
@@ -482,10 +482,10 @@ approval key = skill_code + agent_code
 
 关键文件：
 
-- [app/providers/mcp_provider.py](F:/JayAgent/Jaycode/app/providers/mcp_provider.py)
-- [scripts/launch_mcp_filesystem.py](F:/JayAgent/Jaycode/scripts/launch_mcp_filesystem.py)
-- [scripts/launch_mcp_memory.py](F:/JayAgent/Jaycode/scripts/launch_mcp_memory.py)
-- [scripts/fake_mcp_server.py](F:/JayAgent/Jaycode/scripts/fake_mcp_server.py)
+- [app/providers/mcp_provider.py](../app/providers/mcp_provider.py)
+- [scripts/launch_mcp_filesystem.py](../scripts/launch_mcp_filesystem.py)
+- [scripts/launch_mcp_memory.py](../scripts/launch_mcp_memory.py)
+- [scripts/fake_mcp_server.py](../scripts/fake_mcp_server.py)
 
 #### 你要补的核心认知 [[Jaycode/docs/亮点补充/mcp_provider.py 整个项目的工具接入中枢]]
 
@@ -536,8 +536,8 @@ MCP 工具不是“谁都能直接调”：
 
 关键文件：
 
-- [app/providers/llm_provider.py](F:/JayAgent/Jaycode/app/providers/llm_provider.py)
-- [docs/PHASE_3_RUNTIME.md](F:/JayAgent/Jaycode/docs/PHASE_3_RUNTIME.md)
+- [app/providers/llm_provider.py](../app/providers/llm_provider.py)
+- [Harness Runtime 说明](亮点补充/Harness Runtime.md)
 
 #### 你要补的核心认知
 
@@ -600,9 +600,9 @@ MCP 工具不是“谁都能直接调”：
 
 关键文件：
 
-- [app/benchmark_runner.py](F:/JayAgent/Jaycode/app/benchmark_runner.py)
-- [docs/IMPLEMENTATION_TIMELINE.md](F:/JayAgent/Jaycode/docs/IMPLEMENTATION_TIMELINE.md)
-- [docs/PHASE_8_WORKFLOW_PRODUCTION.md](F:/JayAgent/Jaycode/docs/PHASE_8_WORKFLOW_PRODUCTION.md)
+- [app/benchmark_runner.py](../app/benchmark_runner.py)
+- [Jaycode 架构讲解](Jaycode架构讲解.md)
+- [Jaycode 架构讲解](Jaycode架构讲解.md)
 
 #### 你要补的核心认知
 
@@ -642,9 +642,9 @@ Benchmark 不是附属功能，而是这套平台能否持续进化的关键。
 
 关键文件：
 
-- [app/agents/learning_tools.py](F:/JayAgent/Jaycode/app/agents/learning_tools.py)
-- [app/agents/collaboration_tools.py](F:/JayAgent/Jaycode/app/agents/collaboration_tools.py)
-- [app/graphs/collaboration_runner.py](F:/JayAgent/Jaycode/app/graphs/collaboration_runner.py)
+- [app/agents/learning_tools.py](../app/agents/learning_tools.py)
+- [app/agents/collaboration_tools.py](../app/agents/collaboration_tools.py)
+- [app/graphs/collaboration_runner.py](../app/graphs/collaboration_runner.py)
 
 #### 这些模块在做什么
 
@@ -770,14 +770,14 @@ workflow JSON
 
 除了代码，下面这些文档非常值得补：
 
-- [docs/IMPLEMENTATION_TIMELINE.md](F:/JayAgent/Jaycode/docs/IMPLEMENTATION_TIMELINE.md)
-- [docs/PHASE_1.md](F:/JayAgent/Jaycode/docs/PHASE_1.md)
-- [docs/PHASE_3_RUNTIME.md](F:/JayAgent/Jaycode/docs/PHASE_3_RUNTIME.md)
-- [docs/PHASE_4_WEB_WORKBENCH.md](F:/JayAgent/Jaycode/docs/PHASE_4_WEB_WORKBENCH.md)
-- [docs/PHASE_5_WORKFLOW_RUNTIME.md](F:/JayAgent/Jaycode/docs/PHASE_5_WORKFLOW_RUNTIME.md)
-- [docs/PHASE_6_VISUAL_WORKFLOW_ENTRY.md](F:/JayAgent/Jaycode/docs/PHASE_6_VISUAL_WORKFLOW_ENTRY.md)
-- [docs/PHASE_7_PGVECTOR_RAG.md](F:/JayAgent/Jaycode/docs/PHASE_7_PGVECTOR_RAG.md)
-- [docs/PHASE_8_WORKFLOW_PRODUCTION.md](F:/JayAgent/Jaycode/docs/PHASE_8_WORKFLOW_PRODUCTION.md)
+- [Jaycode 架构讲解](Jaycode架构讲解.md)
+- [Jaycode 架构讲解](Jaycode架构讲解.md)
+- [Harness Runtime 说明](亮点补充/Harness Runtime.md)
+- [Jaycode 使用说明](Jaycode使用说明.md)
+- [编排页面说明](亮点补充/编排页面.md)
+- [编排页面说明](亮点补充/编排页面.md)
+- [治理化 RAG 说明](亮点补充/治理化 RAG（区别于 Demo 级简易检索）.md)
+- [Jaycode 架构讲解](Jaycode架构讲解.md)
 
 这些文档的价值在于：
 
@@ -791,28 +791,28 @@ workflow JSON
 
 ### 第一优先级：必须掌握
 
-1. [app/persistence/sqlite_store.py](F:/JayAgent/Jaycode/app/persistence/sqlite_store.py)
-2. [app/skills/contract.py](F:/JayAgent/Jaycode/app/skills/contract.py)
-3. [app/skills/executor.py](F:/JayAgent/Jaycode/app/skills/executor.py)
-4. [app/providers/llm_provider.py](F:/JayAgent/Jaycode/app/providers/llm_provider.py)
-5. [app/persistence/rag_store.py](F:/JayAgent/Jaycode/app/persistence/rag_store.py)
-6. [app/persistence/memory_store.py](F:/JayAgent/Jaycode/app/persistence/memory_store.py)
+1. [app/persistence/sqlite_store.py](../app/persistence/sqlite_store.py)
+2. [app/skills/contract.py](../app/skills/contract.py)
+3. [app/skills/executor.py](../app/skills/executor.py)
+4. [app/providers/llm_provider.py](../app/providers/llm_provider.py)
+5. [app/persistence/rag_store.py](../app/persistence/rag_store.py)
+6. [app/persistence/memory_store.py](../app/persistence/memory_store.py)
 
 ### 第二优先级：强烈建议掌握
 
-1. [web/src/App.tsx](F:/JayAgent/Jaycode/web/src/App.tsx)
-2. [app/providers/mcp_provider.py](F:/JayAgent/Jaycode/app/providers/mcp_provider.py)
-3. [app/marketplace/installer.py](F:/JayAgent/Jaycode/app/marketplace/installer.py)
-4. [app/benchmark_runner.py](F:/JayAgent/Jaycode/app/benchmark_runner.py)
-5. [app/agents/learning_tools.py](F:/JayAgent/Jaycode/app/agents/learning_tools.py)
-6. [app/agents/collaboration_tools.py](F:/JayAgent/Jaycode/app/agents/collaboration_tools.py)
+1. [web/src/App.tsx](../web/src/App.tsx)
+2. [app/providers/mcp_provider.py](../app/providers/mcp_provider.py)
+3. [app/marketplace/installer.py](../app/marketplace/installer.py)
+4. [app/benchmark_runner.py](../app/benchmark_runner.py)
+5. [app/agents/learning_tools.py](../app/agents/learning_tools.py)
+6. [app/agents/collaboration_tools.py](../app/agents/collaboration_tools.py)
 
 ### 第三优先级：后续补充
 
-1. [web/src/styles.css](F:/JayAgent/Jaycode/web/src/styles.css)
-3. [scripts/launch_mcp_filesystem.py](F:/JayAgent/Jaycode/scripts/launch_mcp_filesystem.py)
-4. [scripts/launch_mcp_memory.py](F:/JayAgent/Jaycode/scripts/launch_mcp_memory.py)
-5. [scripts/fake_mcp_server.py](F:/JayAgent/Jaycode/scripts/fake_mcp_server.py)
+1. [web/src/styles.css](../web/src/styles.css)
+3. [scripts/launch_mcp_filesystem.py](../scripts/launch_mcp_filesystem.py)
+4. [scripts/launch_mcp_memory.py](../scripts/launch_mcp_memory.py)
+5. [scripts/fake_mcp_server.py](../scripts/fake_mcp_server.py)
 
 ---
 
@@ -874,9 +874,9 @@ workflow JSON
 
 #### 项目落点
 
-- [app/persistence/sqlite_store.py](/F:/JayAgent/Jaycode/app/persistence/sqlite_store.py)
-- [app/persistence/memory_store.py](/F:/JayAgent/Jaycode/app/persistence/memory_store.py)
-- [app/persistence/rag_store.py](/F:/JayAgent/Jaycode/app/persistence/rag_store.py)
+- [app/persistence/sqlite_store.py](../app/persistence/sqlite_store.py)
+- [app/persistence/memory_store.py](../app/persistence/memory_store.py)
+- [app/persistence/rag_store.py](../app/persistence/rag_store.py)
 
 #### 记忆方式
 
@@ -902,8 +902,8 @@ workflow JSON
 
 #### 项目落点
 
-- [app/skills/executor.py](/F:/JayAgent/Jaycode/app/skills/executor.py)
-- [app/skills/builtin.py](/F:/JayAgent/Jaycode/app/skills/builtin.py)
+- [app/skills/executor.py](../app/skills/executor.py)
+- [app/skills/builtin.py](../app/skills/builtin.py)
 
 #### 记忆方式
 
@@ -929,8 +929,8 @@ workflow JSON
 
 #### 项目落点
 
-- [app/persistence/sqlite_store.py](/F:/JayAgent/Jaycode/app/persistence/sqlite_store.py)
-- [web/src/App.tsx](/F:/JayAgent/Jaycode/web/src/App.tsx)
+- [app/persistence/sqlite_store.py](../app/persistence/sqlite_store.py)
+- [web/src/App.tsx](../web/src/App.tsx)
 
 #### 记忆方式
 
@@ -957,8 +957,8 @@ Memory 不是直接把聊天原文全存进去，而是先提取候选、再确�
 
 #### 项目落点
 
-- [app/persistence/rag_store.py](/F:/JayAgent/Jaycode/app/persistence/rag_store.py)
-- [app/persistence/memory_store.py](/F:/JayAgent/Jaycode/app/persistence/memory_store.py)
+- [app/persistence/rag_store.py](../app/persistence/rag_store.py)
+- [app/persistence/memory_store.py](../app/persistence/memory_store.py)
 
 #### 记忆方式
 
@@ -984,8 +984,8 @@ Memory 不是直接把聊天原文全存进去，而是先提取候选、再确�
 
 #### 项目落点
 
-- [app/providers/llm_provider.py](/F:/JayAgent/Jaycode/app/providers/llm_provider.py)
-- [app/persistence/sqlite_store.py](/F:/JayAgent/Jaycode/app/persistence/sqlite_store.py)
+- [app/providers/llm_provider.py](../app/providers/llm_provider.py)
+- [app/persistence/sqlite_store.py](../app/persistence/sqlite_store.py)
 
 #### 记忆方式
 
@@ -1013,7 +1013,7 @@ Memory 不是直接把聊天原文全存进去，而是先提取候选、再确�
 
 #### 项目落点
 
-- [app/providers/mcp_provider.py](/F:/JayAgent/Jaycode/app/providers/mcp_provider.py)
+- [app/providers/mcp_provider.py](../app/providers/mcp_provider.py)
 
 #### 记忆方式
 
@@ -1040,8 +1040,8 @@ Memory 不是直接把聊天原文全存进去，而是先提取候选、再确�
 
 #### 项目落点
 
-- [app/graphs/workflow_compiler.py](/F:/JayAgent/Jaycode/app/graphs/workflow_compiler.py)
-- [app/harness/runtime.py](/F:/JayAgent/Jaycode/app/harness/runtime.py)
+- [app/graphs/workflow_compiler.py](../app/graphs/workflow_compiler.py)
+- [app/harness/runtime.py](../app/harness/runtime.py)
 
 #### 记忆方式
 
@@ -1069,8 +1069,8 @@ Memory 不是直接把聊天原文全存进去，而是先提取候选、再确�
 
 #### 项目落点
 
-- [web/src/App.tsx](/F:/JayAgent/Jaycode/web/src/App.tsx)
-- [web/src/styles.css](/F:/JayAgent/Jaycode/web/src/styles.css)
+- [web/src/App.tsx](../web/src/App.tsx)
+- [web/src/styles.css](../web/src/styles.css)
 
 #### 记忆方式
 
@@ -1097,8 +1097,8 @@ benchmark 会覆盖 LLM、RAG、Workflow、MCP、多 Agent 协作等多个方向
 
 #### 项目落点
 
-- [app/benchmark_runner.py](/F:/JayAgent/Jaycode/app/benchmark_runner.py)
-- [app/api/routes.py](/F:/JayAgent/Jaycode/app/api/routes.py)
+- [app/benchmark_runner.py](../app/benchmark_runner.py)
+- [app/api/routes.py](../app/api/routes.py)
 
 #### 记忆方式
 
@@ -1124,10 +1124,10 @@ benchmark 会覆盖 LLM、RAG、Workflow、MCP、多 Agent 协作等多个方向
 
 ### 项目落点
 
-- [README.md](/F:/JayAgent/Jaycode/README.md)
-- [app/persistence/sqlite_store.py](/F:/JayAgent/Jaycode/app/persistence/sqlite_store.py)
-- [app/providers/mcp_provider.py](/F:/JayAgent/Jaycode/app/providers/mcp_provider.py)
-- [app/skills/executor.py](/F:/JayAgent/Jaycode/app/skills/executor.py)
+- [README.md](../README.md)
+- [app/persistence/sqlite_store.py](../app/persistence/sqlite_store.py)
+- [app/providers/mcp_provider.py](../app/providers/mcp_provider.py)
+- [app/skills/executor.py](../app/skills/executor.py)
 
 ### 记忆方式
 

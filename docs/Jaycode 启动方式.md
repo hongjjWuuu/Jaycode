@@ -3,7 +3,7 @@
 当前项目的主入口是：
 
 ```text
-F:\JayAgent\Jaycode\app\main.py
+.\app\main.py
 ```
 
 ## 一、最简单启动版
@@ -13,13 +13,13 @@ F:\JayAgent\Jaycode\app\main.py
 ### 1. 进入项目目录
 
 ```powershell
-cd /d F:\JayAgent\Jaycode
+cd /d .
 ```
 
 如果你在 PowerShell 里，也可以用：
 
 ```powershell
-Set-Location F:\JayAgent\Jaycode
+Set-Location .
 ```
 
 ### 2. 启动后端
@@ -51,7 +51,7 @@ http://127.0.0.1:8100/health
 如果你想一次性完成前后端启动，使用：
 
 ```powershell
-cd F:\JayAgent\Jaycode
+cd .
 powershell -ExecutionPolicy Bypass -File .\setup-and-start.ps1
 ```
 
@@ -78,7 +78,7 @@ http://127.0.0.1:8100/
 如果你只想调试前端：
 
 ```powershell
-cd F:\JayAgent\Jaycode\web
+cd web
 npm install
 npm run dev -- --host 127.0.0.1 --port 5173
 ```
@@ -103,16 +103,16 @@ http://127.0.0.1:5173/
 ## 五、最常用检查命令
 
 ```powershell
-cd F:\JayAgent\Jaycode
+cd .
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8100
 ```
 
 ```powershell
-cd F:\JayAgent\Jaycode\web
+cd web
 npm run build
 ```
 
 ```powershell
-cd F:\JayAgent\Jaycode
+cd .
 powershell -ExecutionPolicy Bypass -File .\setup-and-start.ps1
 ```

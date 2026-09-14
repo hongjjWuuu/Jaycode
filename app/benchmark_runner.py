@@ -48,7 +48,7 @@ def default_mcp_benchmark_cases() -> list[dict[str, Any]]:
             "case_id": "memory_search_project",
             "server_id": "real_memory",
             "tool_name": "search_nodes",
-            "arguments": {"query": "DevAgent"},
+            "arguments": {"query": "Jaycode"},
             "enabled": True,
         },
         {

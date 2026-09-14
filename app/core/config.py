@@ -7,6 +7,18 @@ class Settings(BaseSettings):
     app_env: str = "dev"
     max_scan_files: int = 800
     max_file_preview_chars: int = 4000
+    jaycode_auth_enabled: bool = Field(default=True, validation_alias="JAYCODE_AUTH_ENABLED")
+    jaycode_api_keys: str = Field(default="", validation_alias="JAYCODE_API_KEYS")
+    jaycode_marketplace_remote_enabled: bool = Field(default=False, validation_alias="JAYCODE_MARKETPLACE_REMOTE_ENABLED")
+    jaycode_marketplace_allowed_hosts: str = Field(default="", validation_alias="JAYCODE_MARKETPLACE_ALLOWED_HOSTS")
+    jaycode_marketplace_require_signature: bool = Field(default=True, validation_alias="JAYCODE_MARKETPLACE_REQUIRE_SIGNATURE")
+    jaycode_marketplace_max_download_bytes: int = Field(default=25 * 1024 * 1024, validation_alias="JAYCODE_MARKETPLACE_MAX_DOWNLOAD_BYTES")
+    jaycode_marketplace_max_extracted_bytes: int = Field(default=100 * 1024 * 1024, validation_alias="JAYCODE_MARKETPLACE_MAX_EXTRACTED_BYTES")
+    jaycode_marketplace_max_files: int = Field(default=1000, validation_alias="JAYCODE_MARKETPLACE_MAX_FILES")
+    jaycode_external_skill_require_docker: bool = Field(default=True, validation_alias="JAYCODE_EXTERNAL_SKILL_REQUIRE_DOCKER")
+    jaycode_mcp_allowed_commands: str = Field(default="", validation_alias="JAYCODE_MCP_ALLOWED_COMMANDS")
+    jaycode_mcp_max_runtime_seconds: int = Field(default=15, validation_alias="JAYCODE_MCP_MAX_RUNTIME_SECONDS")
+    jaycode_mcp_max_output_bytes: int = Field(default=1024 * 1024, validation_alias="JAYCODE_MCP_MAX_OUTPUT_BYTES")
     openai_api_key: str = ""
     openai_base_url: str = ""
     jaycode_agent_llm_model: str = Field(

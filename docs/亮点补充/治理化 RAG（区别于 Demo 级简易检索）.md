@@ -164,15 +164,15 @@ json
 
 最关键的是这几个：
 
-- [app/persistence/rag_store.py](/F:/JayAgent/Jaycode/app/persistence/rag_store.py)
-- [app/api/routes.py](/F:/JayAgent/Jaycode/app/api/routes.py)
-- [app/agents/rag_tools.py](/F:/JayAgent/Jaycode/app/agents/rag_tools.py)
-- [app/benchmark_runner.py](/F:/JayAgent/Jaycode/app/benchmark_runner.py)
+- [app/persistence/rag_store.py](../../app/persistence/rag_store.py)
+- [app/api/routes.py](../../app/api/routes.py)
+- [app/agents/rag_tools.py](../../app/agents/rag_tools.py)
+- [app/benchmark_runner.py](../../app/benchmark_runner.py)
 
 前端对应的调用入口主要在：
 
-- [web/src/api.ts](/F:/JayAgent/Jaycode/web/src/api.ts)
-- [web/src/App.tsx](/F:/JayAgent/Jaycode/web/src/App.tsx)
+- [web/src/api.ts](../../web/src/api.ts)
+- [web/src/App.tsx](../../web/src/App.tsx)
 
 ---
 
@@ -192,7 +192,7 @@ json
 data/dev_agent_studio.db
 ```
 
-这个路径就在 [app/persistence/rag_store.py](/F:/JayAgent/Jaycode/app/persistence/rag_store.py) 里：
+这个路径就在 [app/persistence/rag_store.py](../../app/persistence/rag_store.py) 里：
 
 ```
 def __init__(self, db_path: str | Path = "data/dev_agent_studio.db"):
@@ -206,7 +206,7 @@ def __init__(self, db_path: str | Path = "data/dev_agent_studio.db"):
 - `rag_chunk`
 - `rag_gold_case`
 
-这些表都在 [app/persistence/rag_store.py](/F:/JayAgent/Jaycode/app/persistence/rag_store.py) 里初始化。
+这些表都在 [app/persistence/rag_store.py](../../app/persistence/rag_store.py) 里初始化。
 
 ---
 
@@ -223,7 +223,7 @@ def __init__(self, db_path: str | Path = "data/dev_agent_studio.db"):
 
 那么 RAG 会存到 PostgreSQL 里，依赖 pgvector 做向量检索。
 
-这部分也在 [app/persistence/rag_store.py](/F:/JayAgent/Jaycode/app/persistence/rag_store.py) 中的 `PgVectorRagStore` 实现里。
+这部分也在 [app/persistence/rag_store.py](../../app/persistence/rag_store.py) 中的 `PgVectorRagStore` 实现里。
 
 ---
 
@@ -294,7 +294,7 @@ API 路由里有：
 - `POST /rag/process`
 - `POST /rag/ingest`
 
-在 [app/api/routes.py](/F:/JayAgent/Jaycode/app/api/routes.py) 中：
+在 [app/api/routes.py](../../app/api/routes.py) 中：
 
 - `/rag/process`
     
@@ -321,7 +321,7 @@ API 路由里有：
 
 - `add_note(collection, path, content)`
 
-它也在 [app/persistence/rag_store.py](/F:/JayAgent/Jaycode/app/persistence/rag_store.py) 里。
+它也在 [app/persistence/rag_store.py](../../app/persistence/rag_store.py) 里。
 
 这个方法适合把：
 
@@ -333,7 +333,7 @@ API 路由里有：
 
 直接塞进知识库。
 
-在 [app/api/routes.py](/F:/JayAgent/Jaycode/app/api/routes.py) 里你也能看到很多地方会调用它，比如：
+在 [app/api/routes.py](../../app/api/routes.py) 里你也能看到很多地方会调用它，比如：
 
 - 学习计划沉淀
 - 审核备注保存
@@ -347,7 +347,7 @@ API 路由里有：
 
 - `POST /rag/query`
 
-对应 [app/api/routes.py](/F:/JayAgent/Jaycode/app/api/routes.py)：
+对应 [app/api/routes.py](../../app/api/routes.py)：
 
 ```
 results = rag_store.query(request.collection, request.question, request.limit, actor_id=actor_id)
@@ -369,7 +369,7 @@ results = rag_store.query(request.collection, request.question, request.limit, a
 
 也就是说不是所有知识都对所有人可见。
 
-这个逻辑在 [app/persistence/rag_store.py](/F:/JayAgent/Jaycode/app/persistence/rag_store.py) 里的：
+这个逻辑在 [app/persistence/rag_store.py](../../app/persistence/rag_store.py) 里的：
 
 - `_acl_allows(...)`
 
@@ -398,7 +398,7 @@ PgVector 模式下，主要是：
 
 打开，系统还会让 LLM 对候选结果重新排序。
 
-这部分也在 [app/persistence/rag_store.py](/F:/JayAgent/Jaycode/app/persistence/rag_store.py) 里。
+这部分也在 [app/persistence/rag_store.py](../../app/persistence/rag_store.py) 里。
 
 ---
 
@@ -458,7 +458,7 @@ Memory 负责：
 
 这两个不是同一个东西。
 
-在 [app/persistence/memory_store.py](/F:/JayAgent/Jaycode/app/persistence/memory_store.py) 里你会看到注释已经说明了：
+在 [app/persistence/memory_store.py](../../app/persistence/memory_store.py) 里你会看到注释已经说明了：
 
 - Memory 是 governed long-term memory candidates
 - 它和 RAG corpus 分开
@@ -476,7 +476,7 @@ RAG 不是完全公开的。
 
 查询时会传一个 `actor_id`，来源有：
 
-- 请求头 `x_devagent_actor`
+- 请求头 `x_Jaycode_actor`
 - 或请求体里的 `actor_id`
 
 然后在 `rag_store.query(...)` 和 `rag_store.list_documents(...)` 里做 ACL 校验。
@@ -510,7 +510,7 @@ Gold Set 是“标准答案集合”。
 - MRR
 - 其他检索指标
 
-对应接口在 [app/api/routes.py](/F:/JayAgent/Jaycode/app/api/routes.py)：
+对应接口在 [app/api/routes.py](../../app/api/routes.py)：
 
 - `GET /rag/gold-cases`
 - `POST /rag/gold-cases`
@@ -528,7 +528,7 @@ Gold Set 是“标准答案集合”。
 - `listRagGoldCases(...)`
 - `saveRagGoldCase(...)`
 
-都在 [web/src/api.ts](/F:/JayAgent/Jaycode/web/src/api.ts) 里。
+都在 [web/src/api.ts](../../web/src/api.ts) 里。
 
 对应到页面上，主要是：
 

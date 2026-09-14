@@ -5,6 +5,7 @@ from typing import Any
 from uuid import uuid4
 
 from app.harness.events import utc_now_iso
+from app.core.config import settings
 from app.persistence.rag_store import rag_store
 from app.persistence.sqlite_store import task_store
 from app.providers.llm_provider import llm_provider
@@ -137,8 +138,13 @@ def _execute_declarative_skill(skill: dict[str, Any], payload: dict[str, Any]) -
         entrypoint_path = str(default_input.get("_entrypoint_path") or skill.get("entrypoint") or "")
         function_name = str(default_input.get("_entrypoint_function") or "run")
         timeout_seconds = int(default_input.get("_timeout_seconds") or 10)
-        output = run_python_skill_sandbox(entrypoint_path, function_name, payload, timeout_seconds=timeout_seconds)
         sandbox_status = python_skill_sandbox_status()
+        is_external = str(skill.get("source_plugin") or "") != builtin_plugin().get("plugin_id")
+        if settings.jaycode_external_skill_require_docker and is_external and sandbox_status.get("mode") != "docker":
+            raise PermissionError("External Python Skills require Docker sandbox execution")
+        if is_external and sandbox_status.get("mode") == "docker" and sandbox_status.get("fallback_enabled"):
+            raise PermissionError("External Python Skills cannot fall back from Docker sandbox")
+        output = run_python_skill_sandbox(entrypoint_path, function_name, payload, timeout_seconds=timeout_seconds)
         return {
             **output,
             "_sandbox": {

@@ -52,13 +52,13 @@ BUILTIN_MARKETPLACE_MANIFESTS: dict[str, dict[str, Any]] = {
             },
         ],
     },
-    "devagent-rag-knowledge-pack": {
-        "package_id": "devagent-rag-knowledge-pack",
-        "name": "DevAgent RAG Knowledge Pack",
+    "jaycode-rag-knowledge-pack": {
+        "package_id": "jaycode-rag-knowledge-pack",
+        "name": "Jaycode RAG Knowledge Pack",
         "version": "1.0.0",
         "package_type": "rag_pack",
         "author": "Jaycode",
-        "description": "Seed project-memory with reusable RAG notes about DevAgent concepts.",
+        "description": "Seed project-memory with reusable RAG notes about Jaycode concepts.",
         "permissions": ["rag.write"],
         "rag_notes": [
             {

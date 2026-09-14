@@ -23,7 +23,7 @@ input_path = Path(sys.argv[3])
 output_path = Path(sys.argv[4])
 
 payload = json.loads(input_path.read_text(encoding="utf-8"))
-spec = importlib.util.spec_from_file_location("devagent_external_skill", entrypoint_path)
+spec = importlib.util.spec_from_file_location("jaycode_external_skill", entrypoint_path)
 if spec is None or spec.loader is None:
     raise RuntimeError(f"Cannot load skill entrypoint: {entrypoint_path}")
 module = importlib.util.module_from_spec(spec)
@@ -79,7 +79,7 @@ def run_python_skill_subprocess_sandbox(
     path = Path(entrypoint_path).resolve()
     if not path.exists() or path.suffix.lower() != ".py":
         raise FileNotFoundError(f"Python skill entrypoint not found: {entrypoint_path}")
-    with tempfile.TemporaryDirectory(prefix="devagent_skill_") as temp_dir:
+    with tempfile.TemporaryDirectory(prefix="jaycode_skill_") as temp_dir:
         temp = Path(temp_dir)
         input_path = temp / "input.json"
         output_path = temp / "output.json"
@@ -131,9 +131,9 @@ def run_python_skill_docker_sandbox(
 
     entry_dir = path.parent
     entry_name = path.name
-    with tempfile.TemporaryDirectory(prefix="devagent_skill_docker_") as temp_dir:
+    with tempfile.TemporaryDirectory(prefix="jaycode_skill_docker_") as temp_dir:
         temp = Path(temp_dir).resolve()
-        container_name = f"devagent-skill-{uuid4().hex[:12]}"
+        container_name = f"jaycode-skill-{uuid4().hex[:12]}"
         input_path = temp / "input.json"
         output_path = temp / "output.json"
         runner_path = temp / "runner.py"

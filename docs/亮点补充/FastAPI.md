@@ -29,7 +29,7 @@ FastAPI 的核心特点是：
 
 文件：
 
-- [app/main.py](F:/JayAgent/Jaycode/app/main.py)
+- [app/main.py](../../app/main.py)
 
 职责：
 
@@ -48,7 +48,7 @@ app = FastAPI(title=settings.app_name, version="0.1.0")
 
 文件：
 
-- [app/api/routes.py](F:/JayAgent/Jaycode/app/api/routes.py)
+- [app/api/routes.py](../../app/api/routes.py)
 
 职责：
 
@@ -65,8 +65,8 @@ app = FastAPI(title=settings.app_name, version="0.1.0")
 
 文件：
 
-- [app/schemas/project.py](F:/JayAgent/Jaycode/app/schemas/project.py)
-- [app/schemas/studio.py](F:/JayAgent/Jaycode/app/schemas/studio.py)
+- [app/schemas/project.py](../../app/schemas/project.py)
+- [app/schemas/studio.py](../../app/schemas/studio.py)
 
 职责：
 
@@ -79,7 +79,7 @@ app = FastAPI(title=settings.app_name, version="0.1.0")
 
 文件：
 
-- [app/core/config.py](F:/JayAgent/Jaycode/app/core/config.py)
+- [app/core/config.py](../../app/core/config.py)
 
 职责：
 

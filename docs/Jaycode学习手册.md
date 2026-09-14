@@ -752,7 +752,7 @@ rag_store = create_rag_store()
 
 参考：
 
-- [app/persistence/memory_store.py](/F:/JayAgent/Jaycode/app/persistence/memory_store.py)
+- [app/persistence/memory_store.py](../app/persistence/memory_store.py)
 
 ---
 

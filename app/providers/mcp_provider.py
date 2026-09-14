@@ -9,8 +9,11 @@ import time
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
+import re
 
 from app.agents.project_tools import EXCLUDED_DIRS
+from app.core.config import settings
+from app.core.security import current_auth_context
 from app.harness.events import utc_now_iso
 from app.persistence.sqlite_store import task_store
 
@@ -230,7 +233,7 @@ class RealMCPProvider:
         server = self._enabled_server(server_id, require_enabled=False)
         started = time.perf_counter()
         try:
-            result = self._request(server, "tools/list", {})
+            result, _ = self._request(server, "tools/list", {})
             tools = result.get("tools") if isinstance(result, dict) else []
             saved = []
             discovered_names: set[str] = set()
@@ -308,13 +311,14 @@ class RealMCPProvider:
             approval = self.check_approval(agent_code, server_id, tool_name)
             if not approval["allowed"]:
                 raise PermissionError(str(approval["reason"]))
-            result = self._request(
+            result, exit_code = self._request(
                 server,
                 "tools/call",
                 {"name": tool_name, "arguments": arguments},
             )
             output = {"provider": "mcp", "server_id": server_id, "tool_name": tool_name, "result": result}
             mcp_error = self._mcp_error_message(result)
+            context = current_auth_context()
             task_store.save_mcp_call_log(
                 {
                     "call_id": call_id,
@@ -326,11 +330,17 @@ class RealMCPProvider:
                     "status": "failed" if mcp_error else "completed",
                     "error_message": mcp_error,
                     "latency_ms": self._elapsed_ms(started),
+                    "request_id": context.request_id if context else "",
+                    "actor_id": context.actor_id if context else "internal",
+                    "role": context.role if context else "system-agent",
+                    "command_summary": Path(str(server["command"])).name,
+                    "exit_code": exit_code,
                     "created_at": utc_now_iso(),
                 }
             )
             return {**output, "call_id": call_id, "status": "failed" if mcp_error else "completed", "error_message": mcp_error}
         except Exception as exc:
+            context = current_auth_context()
             task_store.save_mcp_call_log(
                 {
                     "call_id": call_id,
@@ -342,6 +352,10 @@ class RealMCPProvider:
                     "status": "failed",
                     "error_message": str(exc),
                     "latency_ms": self._elapsed_ms(started),
+                    "request_id": context.request_id if context else "",
+                    "actor_id": context.actor_id if context else "internal",
+                    "role": context.role if context else "system-agent",
+                    "exit_code": None,
                     "created_at": utc_now_iso(),
                 }
             )
@@ -376,7 +390,29 @@ class RealMCPProvider:
             raise NotImplementedError("Only stdio MCP transport is supported in this phase")
         if not server.get("command"):
             raise ValueError("MCP stdio server command is required")
+        self._validate_server_process_config(server)
         return server
+
+    def _validate_server_process_config(self, server: dict[str, Any]) -> None:
+        command = str(server.get("command") or "").strip()
+        allowed = {item.strip().lower() for item in settings.jaycode_mcp_allowed_commands.split(",") if item.strip()}
+        if not allowed or Path(command).name.lower() not in allowed:
+            raise PermissionError("MCP command is not in JAYCODE_MCP_ALLOWED_COMMANDS")
+        args = server.get("args") or []
+        if not isinstance(args, list) or any(not isinstance(item, str) or not item.strip() for item in args):
+            raise ValueError("MCP args must be a non-empty string array")
+        dangerous = ("&&", "||", ";", "|", "$(", "\r", "\n")
+        shell_flags = {"-c", "/c", "/k", "-command", "-encodedcommand"}
+        if any(item.lower() in shell_flags or any(token in item for token in dangerous) for item in args):
+            raise PermissionError("Shell-style MCP arguments are not allowed")
+        env = server.get("env") or {}
+        if not isinstance(env, dict) or any(not isinstance(k, str) or not isinstance(v, str) for k, v in env.items()):
+            raise ValueError("MCP env must be a string-to-string object")
+        if any(not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key) for key in env):
+            raise ValueError("MCP env contains an invalid variable name")
+        protected = {"PATH", "PATHEXT", "PYTHONPATH", "NODE_OPTIONS", "LD_PRELOAD", "COMSPEC", "SHELL"}
+        if protected.intersection(key.upper() for key in env):
+            raise PermissionError("MCP env cannot override protected runtime variables")
 
 
     # 协议通信核心 
@@ -392,8 +428,10 @@ class RealMCPProvider:
 # 超时或异常则报错
 # 最后终止进程
 
-    def _request(self, server: dict[str, Any], method: str, params: dict[str, Any]) -> dict[str, Any]:
-        command = [str(server["command"]), *[str(item) for item in server.get("args", [])]]
+    def _request(self, server: dict[str, Any], method: str, params: dict[str, Any]) -> tuple[dict[str, Any], int | None]:
+        self._validate_server_process_config(server)
+        command = [str(server["command"]), *server.get("args", [])]
+        deadline = time.perf_counter() + float(max(1, settings.jaycode_mcp_max_runtime_seconds))
         env = os.environ.copy()
         env.update({str(k): str(v) for k, v in (server.get("env") or {}).items()})
         messages: queue.Queue[dict[str, Any] | None] = queue.Queue()
@@ -425,16 +463,30 @@ class RealMCPProvider:
                     },
                 },
             )
-            self._read_response(messages, request_id, stderr_chunks)
+            self._read_response(messages, request_id, stderr_chunks, max(0.1, deadline - time.perf_counter()))
             self._write_message(process, {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}})
             request_id += 1
             self._write_message(process, {"jsonrpc": "2.0", "id": request_id, "method": method, "params": params})
-            return self._read_response(messages, request_id, stderr_chunks)
+            result = self._read_response(messages, request_id, stderr_chunks, max(0.1, deadline - time.perf_counter()))
+            self._stop_process(process)
+            return result, process.returncode
         finally:
+            self._stop_process(process)
+
+    def _stop_process(self, process: subprocess.Popen[bytes]) -> None:
+        if process.poll() is not None:
+            return
+        try:
+            process.terminate()
+            process.wait(timeout=1)
+        except subprocess.TimeoutExpired:
             try:
-                process.terminate()
+                process.kill()
+                process.wait(timeout=1)
             except Exception:
                 pass
+        except Exception:
+            pass
 
     # 把 JSON payload 写到子进程 stdin
     def _write_message(self, process: subprocess.Popen[bytes], payload: dict[str, Any]) -> None:
@@ -451,9 +503,10 @@ class RealMCPProvider:
         messages: queue.Queue[dict[str, Any] | None],
         request_id: int,
         stderr_chunks: list[bytes],
-        timeout_seconds: float = 15.0,
+        timeout_seconds: float | None = None,
     ) -> dict[str, Any]:
         started = time.perf_counter()
+        timeout_seconds = float(timeout_seconds or settings.jaycode_mcp_max_runtime_seconds)
         while time.perf_counter() - started < timeout_seconds:
             try:
                 message = messages.get(timeout=0.25)
@@ -493,6 +546,8 @@ class RealMCPProvider:
         if not first_line:
             return None
         if not first_line.lower().startswith(b"content-length:"):
+            if len(first_line) > settings.jaycode_mcp_max_output_bytes:
+                raise ValueError("MCP output exceeded configured limit")
             text = first_line.decode("utf-8", errors="ignore").strip()
             if not text:
                 return None
@@ -514,7 +569,11 @@ class RealMCPProvider:
         length = int(headers.get("content-length") or 0)
         if length <= 0:
             return None
+        if length > settings.jaycode_mcp_max_output_bytes:
+            raise ValueError("MCP output exceeded configured limit")
         body = process.stdout.read(length)
+        if len(body) > settings.jaycode_mcp_max_output_bytes:
+            raise ValueError("MCP output exceeded configured limit")
         return json.loads(body.decode("utf-8"))
 
 # 单独读取子进程 stderr
@@ -526,7 +585,9 @@ class RealMCPProvider:
             chunk = process.stderr.readline()
             if not chunk:
                 return
-            stderr_chunks.append(chunk)
+            current = sum(len(item) for item in stderr_chunks)
+            if current < settings.jaycode_mcp_max_output_bytes:
+                stderr_chunks.append(chunk[: settings.jaycode_mcp_max_output_bytes - current])
 
     def _elapsed_ms(self, started: float) -> int:
         return max(0, int((time.perf_counter() - started) * 1000))

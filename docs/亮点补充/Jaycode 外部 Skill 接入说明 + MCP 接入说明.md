@@ -36,7 +36,7 @@ Jaycode 里的 Skill 不是简单脚本，而是统一能力对象。
 
 Skill 的标准接口在这里：
 
-- [app/skills/base.py](/F:/JayAgent/Jaycode/app/skills/base.py)
+- [app/skills/base.py](../../app/skills/base.py)
 
 核心是两部分：
 
@@ -49,7 +49,7 @@ Skill 的标准接口在这里：
 
 Skill 注册在这里：
 
-- [app/skills/registry.py](/F:/JayAgent/Jaycode/app/skills/registry.py)
+- [app/skills/registry.py](../../app/skills/registry.py)
 
 这里的 `skill_registry` 负责：
 
@@ -63,7 +63,7 @@ Skill 注册在这里：
 
 内置 Skill 会在运行前被种入数据库：
 
-- [app/skills/executor.py](/F:/JayAgent/Jaycode/app/skills/executor.py)
+- [app/skills/executor.py](../../app/skills/executor.py)
 
 `ensure_builtin_skills_seeded()` 的作用就是把内置 Skill 写入 SQLite。
 
@@ -78,7 +78,7 @@ Skill 注册在这里：
 
 仍然在：
 
-- [app/skills/executor.py](/F:/JayAgent/Jaycode/app/skills/executor.py)
+- [app/skills/executor.py](../../app/skills/executor.py)
 
 `execute_skill()` 这条链路大致是：
 
@@ -97,7 +97,7 @@ Skill 注册在这里：
 
 工作流编译器会直接调用 Skill：
 
-- [app/graphs/workflow_compiler.py](/F:/JayAgent/Jaycode/app/graphs/workflow_compiler.py)
+- [app/graphs/workflow_compiler.py](../../app/graphs/workflow_compiler.py)
 
 当节点类型是 `skill` 时，工作流会走 `execute_skill(...)`。
 
@@ -107,7 +107,7 @@ Skill 注册在这里：
 
 外部 Skill 主要通过 marketplace 安装进入系统：
 
-- [app/marketplace/installer.py](/F:/JayAgent/Jaycode/app/marketplace/installer.py)
+- [app/marketplace/installer.py](../../app/marketplace/installer.py)
 
 支持的思路是：
 
@@ -155,7 +155,7 @@ MCP 在 Jaycode 里是工具接入层，不是 Skill 层。
 
 入口在这里：
 
-- [app/providers/mcp_provider.py](/F:/JayAgent/Jaycode/app/providers/mcp_provider.py)
+- [app/providers/mcp_provider.py](../../app/providers/mcp_provider.py)
 
 这里有两种模式：
 
@@ -187,13 +187,13 @@ MCP 的外部接入流程一般是：
 
 这整条链路都在：
 
-- [app/providers/mcp_provider.py](/F:/JayAgent/Jaycode/app/providers/mcp_provider.py)
+- [app/providers/mcp_provider.py](../../app/providers/mcp_provider.py)
 
 ### 3. MCP 工具怎么执行
 
 MCP 工具在工作流里也能被调用：
 
-- [app/graphs/workflow_compiler.py](/F:/JayAgent/Jaycode/app/graphs/workflow_compiler.py)
+- [app/graphs/workflow_compiler.py](../../app/graphs/workflow_compiler.py)
 
 当节点类型是 `mcp_tool` 时，工作流会调用 `mcp_provider.call_tool(...)`。
 
@@ -210,7 +210,7 @@ MCP 的治理点比较完整：
 
 这些数据会落到 SQLite：
 
-- [app/persistence/sqlite_store.py](/F:/JayAgent/Jaycode/app/persistence/sqlite_store.py)
+- [app/persistence/sqlite_store.py](../../app/persistence/sqlite_store.py)
 
 ### 5. 外部 MCP 能力是否支持
 
@@ -326,12 +326,12 @@ Jaycode 的 marketplace 也支持 `mcp_pack`。
 
 ## 九、对应代码入口速查
 
-- Skill 定义: [app/skills/base.py](/F:/JayAgent/Jaycode/app/skills/base.py)
-- Skill 注册: [app/skills/registry.py](/F:/JayAgent/Jaycode/app/skills/registry.py)
-- Skill 执行: [app/skills/executor.py](/F:/JayAgent/Jaycode/app/skills/executor.py)
-- Skill 安装: [app/marketplace/installer.py](/F:/JayAgent/Jaycode/app/marketplace/installer.py)
-- MCP provider: [app/providers/mcp_provider.py](/F:/JayAgent/Jaycode/app/providers/mcp_provider.py)
-- 工作流编译: [app/graphs/workflow_compiler.py](/F:/JayAgent/Jaycode/app/graphs/workflow_compiler.py)
-- API 路由: [app/api/routes.py](/F:/JayAgent/Jaycode/app/api/routes.py)
-- 数据库存储: [app/persistence/sqlite_store.py](/F:/JayAgent/Jaycode/app/persistence/sqlite_store.py)
+- Skill 定义: [app/skills/base.py](../../app/skills/base.py)
+- Skill 注册: [app/skills/registry.py](../../app/skills/registry.py)
+- Skill 执行: [app/skills/executor.py](../../app/skills/executor.py)
+- Skill 安装: [app/marketplace/installer.py](../../app/marketplace/installer.py)
+- MCP provider: [app/providers/mcp_provider.py](../../app/providers/mcp_provider.py)
+- 工作流编译: [app/graphs/workflow_compiler.py](../../app/graphs/workflow_compiler.py)
+- API 路由: [app/api/routes.py](../../app/api/routes.py)
+- 数据库存储: [app/persistence/sqlite_store.py](../../app/persistence/sqlite_store.py)
 

@@ -31,7 +31,7 @@ class BuiltinSkill:
     permissions: list[str]
     input_schema: dict[str, Any]
     output_schema: dict[str, Any]
-    source_plugin: str = "official-devagent-skills"
+    source_plugin: str = "official-jaycode-skills"
     default_input: dict[str, Any] = field(default_factory=dict)
 
     def execute(self, context: SkillContext, input_data: dict[str, Any]) -> dict[str, Any]:
@@ -334,8 +334,8 @@ class WorkflowRunSkill(BuiltinSkill):
 
 def builtin_plugin() -> dict[str, Any]:
     return {
-        "plugin_id": "official-devagent-skills",
-        "name": "Official DevAgent Skills",
+        "plugin_id": "official-jaycode-skills",
+        "name": "Official Jaycode Skills",
         "version": "1.0.0",
         "source_type": "builtin",
         "source_url": "",

@@ -4,6 +4,7 @@ import json
 import sqlite3
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from app.harness.events import utc_now_iso
 
@@ -221,6 +222,11 @@ class SQLiteTaskStore:
                 )
                 """
             )
+            self._ensure_column(conn, "mcp_tool_call_log", "request_id", "TEXT")
+            self._ensure_column(conn, "mcp_tool_call_log", "actor_id", "TEXT")
+            self._ensure_column(conn, "mcp_tool_call_log", "role", "TEXT")
+            self._ensure_column(conn, "mcp_tool_call_log", "command_summary", "TEXT")
+            self._ensure_column(conn, "mcp_tool_call_log", "exit_code", "INTEGER")
             # Benchmark 运行记录
             conn.execute(
                 """
@@ -374,6 +380,22 @@ class SQLiteTaskStore:
                 )
                 """
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS security_audit_log (
+                    audit_id TEXT PRIMARY KEY,
+                    request_id TEXT NOT NULL,
+                    actor_id TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    resource_type TEXT NOT NULL,
+                    resource_id TEXT,
+                    status TEXT NOT NULL,
+                    metadata_json TEXT,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
 
     # 不是“简单建表”，而是考虑了 schema 演进 这说明项目已经把“版本兼容”当成架构的一部分。
     # 四个方法构成了任务治理的基础动作： 创建任务 更新状态 写事件 存产物
@@ -387,6 +409,55 @@ class SQLiteTaskStore:
                 """,
                 (task_id, goal, project_path, status, now, now),
             )
+
+    def save_security_audit(self, record: dict[str, Any]) -> dict[str, Any]:
+        audit = {
+            "audit_id": record.get("audit_id") or f"audit_{uuid4().hex}",
+            "request_id": str(record.get("request_id") or ""),
+            "actor_id": str(record.get("actor_id") or "unknown"),
+            "role": str(record.get("role") or "unknown"),
+            "action": str(record.get("action") or "unknown"),
+            "resource_type": str(record.get("resource_type") or "api"),
+            "resource_id": str(record.get("resource_id") or ""),
+            "status": str(record.get("status") or "unknown"),
+            "metadata": record.get("metadata") or {},
+            "created_at": record.get("created_at") or utc_now_iso(),
+        }
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO security_audit_log(
+                    audit_id, request_id, actor_id, role, action, resource_type,
+                    resource_id, status, metadata_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    audit["audit_id"],
+                    audit["request_id"],
+                    audit["actor_id"],
+                    audit["role"],
+                    audit["action"],
+                    audit["resource_type"],
+                    audit["resource_id"],
+                    audit["status"],
+                    json.dumps(audit["metadata"], ensure_ascii=False),
+                    audit["created_at"],
+                ),
+            )
+        return audit
+
+    def list_security_audits(self, limit: int = 100) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM security_audit_log ORDER BY created_at DESC LIMIT ?",
+                (max(1, min(limit, 1000)),),
+            ).fetchall()
+        result = []
+        for row in rows:
+            item = dict(row)
+            item["metadata"] = json.loads(item.pop("metadata_json") or "{}")
+            result.append(item)
+        return result
 
     def update_task(self, task_id: str, status: str, final_report: str | None = None) -> None:
         now = utc_now_iso()
@@ -1499,9 +1570,10 @@ class SQLiteTaskStore:
                 """
                 INSERT OR REPLACE INTO mcp_tool_call_log(
                     call_id, server_id, tool_name, agent_code, input_json, output_json,
-                    status, error_message, latency_ms, created_at
+                    status, error_message, latency_ms, request_id, actor_id, role,
+                    command_summary, exit_code, created_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     log["call_id"],
@@ -1513,6 +1585,11 @@ class SQLiteTaskStore:
                     log.get("status") or "unknown",
                     log.get("error_message"),
                     int(log.get("latency_ms") or 0),
+                    log.get("request_id") or "",
+                    log.get("actor_id") or "unknown",
+                    log.get("role") or "unknown",
+                    log.get("command_summary") or "",
+                    log.get("exit_code"),
                     log.get("created_at") or utc_now_iso(),
                 ),
             )
@@ -1521,7 +1598,8 @@ class SQLiteTaskStore:
     def list_mcp_call_logs(self, limit: int = 100, server_id: str | None = None) -> list[dict[str, Any]]:
         query = """
             SELECT rowid AS sort_id, call_id, server_id, tool_name, agent_code, input_json, output_json,
-                   status, error_message, latency_ms, created_at
+                   status, error_message, latency_ms, request_id, actor_id, role,
+                   command_summary, exit_code, created_at
             FROM mcp_tool_call_log
         """
         params: list[Any] = []

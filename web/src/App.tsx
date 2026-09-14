@@ -140,7 +140,7 @@ type ChatMessage = { role: 'user' | 'assistant'; content: string; source?: strin
 type FocusKind = 'module' | 'file';
 type ReportTab = 'final' | 'mentor' | 'mermaid' | 'governance';
 
-const defaultProjectPath = 'F:/JayAgent/Jaycode';
+const defaultProjectPath = '.';
 const dragPayloadMime = 'application/jaycode-node';
 
 const modeItems: Array<{ mode: ExecutionMode; label: string; icon: typeof Boxes }> = [

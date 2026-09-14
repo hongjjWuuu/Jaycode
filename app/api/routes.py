@@ -199,15 +199,15 @@ def ingest_rag(request: RagIngestRequest) -> RagIngestResponse:
 
 
 @router.post("/rag/query", response_model=RagQueryResponse, tags=["RAG Knowledge Agent"])
-def query_rag(request: RagQueryRequest, x_devagent_actor: str = Header("local-user")) -> RagQueryResponse:
-    actor_id = request.actor_id or x_devagent_actor
+def query_rag(request: RagQueryRequest, x_jaycode_actor: str = Header("local-user")) -> RagQueryResponse:
+    actor_id = request.actor_id or x_jaycode_actor
     results = rag_store.query(request.collection, request.question, request.limit, actor_id=actor_id)
     return RagQueryResponse(collection=request.collection, question=request.question, results=results)
 
 
 @router.get("/rag/documents", tags=["RAG Knowledge Agent"])
-def list_rag_documents(collection: str | None = None, x_devagent_actor: str = Header("local-user")) -> dict[str, object]:
-    return {"documents": rag_store.list_documents(collection, actor_id=x_devagent_actor)}
+def list_rag_documents(collection: str | None = None, x_jaycode_actor: str = Header("local-user")) -> dict[str, object]:
+    return {"documents": rag_store.list_documents(collection, actor_id=x_jaycode_actor)}
 
 
 @router.post("/rag/documents/acl", tags=["RAG Knowledge Agent"])
@@ -1033,11 +1033,11 @@ def add_knowledge_note(request: KnowledgeNoteRequest) -> KnowledgeNoteResponse:
 @router.post("/memories/extract", response_model=list[MemoryRecordResponse], tags=["RAG Knowledge Agent"])
 def extract_memory_candidates(
     request: MemoryExtractRequest,
-    x_devagent_actor: str | None = Header(default=None),
-    x_devagent_role: str | None = Header(default=None),
+    x_jaycode_actor: str | None = Header(default=None),
+    x_jaycode_role: str | None = Header(default=None),
 ) -> list[dict[str, object]]:
     try:
-        _authorize_memory(request.scope, request.scope_id, "extract", x_devagent_actor, x_devagent_role)
+        _authorize_memory(request.scope, request.scope_id, "extract", x_jaycode_actor, x_jaycode_role)
         return memory_store.extract_candidates(
             request.text,
             scope=request.scope,
@@ -1054,10 +1054,10 @@ def list_memories(
     scope: str | None = None,
     scope_id: str | None = None,
     status: str | None = None,
-    x_devagent_actor: str | None = Header(default=None),
-    x_devagent_role: str | None = Header(default=None),
+    x_jaycode_actor: str | None = Header(default=None),
+    x_jaycode_role: str | None = Header(default=None),
 ) -> list[dict[str, object]]:
-    actor, role = _memory_actor(x_devagent_actor, x_devagent_role)
+    actor, role = _memory_actor(x_jaycode_actor, x_jaycode_role)
     if scope in {"project", "team"}:
         _authorize_memory(scope, scope_id or "default", "list", actor, role)
     elif role != "admin":
@@ -1070,13 +1070,13 @@ def list_memories(
 def confirm_memory(
     memory_id: str,
     request: MemoryConfirmRequest,
-    x_devagent_actor: str | None = Header(default=None),
-    x_devagent_role: str | None = Header(default=None),
+    x_jaycode_actor: str | None = Header(default=None),
+    x_jaycode_role: str | None = Header(default=None),
 ) -> dict[str, object]:
     memory = memory_store.get_memory(memory_id)
     if not memory:
         raise HTTPException(status_code=404, detail="Memory not found")
-    _authorize_memory(memory["scope"], memory["scope_id"], "confirm", x_devagent_actor, x_devagent_role)
+    _authorize_memory(memory["scope"], memory["scope_id"], "confirm", x_jaycode_actor, x_jaycode_role)
     collection = request.collection or ("project-memory" if memory["scope"] == "project" else f"user-memory/{memory['scope_id']}")
     saved = rag_store.add_note(collection, f"memory/{memory_id}", memory["content"])
     confirmed = memory_store.confirm(memory_id, saved["path"])
@@ -1088,13 +1088,13 @@ def confirm_memory(
 @router.post("/memories/{memory_id}/reject", response_model=MemoryRecordResponse, tags=["RAG Knowledge Agent"])
 def reject_memory(
     memory_id: str,
-    x_devagent_actor: str | None = Header(default=None),
-    x_devagent_role: str | None = Header(default=None),
+    x_jaycode_actor: str | None = Header(default=None),
+    x_jaycode_role: str | None = Header(default=None),
 ) -> dict[str, object]:
     memory = memory_store.get_memory(memory_id)
     if not memory:
         raise HTTPException(status_code=404, detail="Memory not found")
-    _authorize_memory(memory["scope"], memory["scope_id"], "reject", x_devagent_actor, x_devagent_role)
+    _authorize_memory(memory["scope"], memory["scope_id"], "reject", x_jaycode_actor, x_jaycode_role)
     rejected = memory_store.reject(memory_id)
     if not rejected:
         raise HTTPException(status_code=404, detail="Memory not found")
@@ -1104,13 +1104,13 @@ def reject_memory(
 @router.delete("/memories/{memory_id}", tags=["RAG Knowledge Agent"])
 def delete_memory(
     memory_id: str,
-    x_devagent_actor: str | None = Header(default=None),
-    x_devagent_role: str | None = Header(default=None),
+    x_jaycode_actor: str | None = Header(default=None),
+    x_jaycode_role: str | None = Header(default=None),
 ) -> dict[str, bool]:
     memory = memory_store.get_memory(memory_id)
     if not memory:
         raise HTTPException(status_code=404, detail="Memory not found")
-    _authorize_memory(memory["scope"], memory["scope_id"], "delete", x_devagent_actor, x_devagent_role)
+    _authorize_memory(memory["scope"], memory["scope_id"], "delete", x_jaycode_actor, x_jaycode_role)
     if memory.get("rag_path"):
         collection = "project-memory" if memory["scope"] == "project" else f"user-memory/{memory['scope_id']}"
         rag_store.delete_note(collection, memory["rag_path"])
@@ -1839,3 +1839,8 @@ def _review_content(action: str, comment: str | None) -> str:
     }
     suffix = f"：{comment}" if comment else ""
     return f"{labels[action]}{suffix}"
+
+
+@router.get("/security/audit", tags=["Security"])
+def list_security_audit(limit: int = 100) -> dict[str, object]:
+    return {"audits": task_store.list_security_audits(limit)}
