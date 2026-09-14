@@ -555,6 +555,38 @@ class SQLiteTaskStore:
                 (task_id, artifact_type, name, json.dumps(content, ensure_ascii=False), utc_now_iso(), 1),
             )
 
+    def save_task_bundle(
+        self,
+        task_id: str,
+        status: str,
+        final_report: str | None,
+        artifacts: list[tuple[str, str, Any]],
+        events: list[dict[str, Any]],
+    ) -> None:
+        """Atomically persist task state, artifacts and events for one execution."""
+        now = utc_now_iso()
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE agent_task SET status = ?, final_report = COALESCE(?, final_report), updated_at = ?, execution_version = execution_version + 1 WHERE task_id = ?",
+                (status, final_report, now, task_id),
+            )
+            version = conn.execute("SELECT execution_version FROM agent_task WHERE task_id = ?", (task_id,)).fetchone()
+            execution_version = int(version[0] if version else 1)
+            for artifact_type, name, content in artifacts:
+                conn.execute(
+                    "INSERT INTO agent_task_artifact(task_id, artifact_type, name, content_json, created_at, execution_version) VALUES (?, ?, ?, ?, ?, ?)",
+                    (task_id, artifact_type, name, json.dumps(content, ensure_ascii=False), now, execution_version),
+                )
+            for event in events:
+                event_id = event.get("event_id") or f"evt_{task_id}_{event.get('node') or 'event'}_{utc_now_iso()}"
+                if conn.execute("SELECT 1 FROM agent_task_event WHERE event_id = ?", (event_id,)).fetchone():
+                    continue
+                sequence = conn.execute("SELECT COALESCE(MAX(event_seq), 0) + 1 FROM agent_task_event WHERE task_id = ?", (task_id,)).fetchone()[0]
+                conn.execute(
+                    "INSERT INTO agent_task_event(event_id, task_id, event_type, node, agent, status, content, data_json, created_at, event_seq, execution_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (event_id, task_id, event.get("type", "event"), event.get("node"), event.get("agent"), event.get("status"), event.get("content"), json.dumps(event.get("data", {}), ensure_ascii=False), event.get("timestamp") or now, sequence, execution_version),
+                )
+
     def list_tasks(self, limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
         with self._connect() as conn:
             rows = conn.execute(

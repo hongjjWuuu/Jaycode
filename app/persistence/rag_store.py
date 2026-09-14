@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Any
 
 from app.harness.events import utc_now_iso
+from app.providers.llm_provider import llm_provider
+from app.schemas.llm import RerankResponse
 
 
 class SQLiteRagStore:
@@ -957,8 +959,6 @@ def _rerank_candidates(question: str, candidates: list[dict[str, Any]]) -> list[
     if _config().get("JAYCODE_RAG_RERANKER", "off").lower() != "llm" or len(candidates) <= 1:
         return candidates
     try:
-        from app.providers.llm_provider import llm_provider
-
         candidate_lines = [
             {"chunk_id": item["chunk_id"], "path": item["path"], "preview": str(item["content"])[:420]}
             for item in candidates[:12]
@@ -969,10 +969,11 @@ def _rerank_candidates(question: str, candidates: list[dict[str, Any]]) -> list[
             json.dumps({"ordered_chunk_ids": [item["chunk_id"] for item in candidates]}, ensure_ascii=False),
             agent="rag_reranker",
             prompt_version="rag_reranker.v1",
+            response_schema=RerankResponse,
             use_active_prompt=False,
         )
-        parsed = json.loads(str(response.get("text") or "{}"))
-        ordered = [str(item) for item in parsed.get("ordered_chunk_ids", [])]
+        parsed = llm_provider.parse_structured(response, RerankResponse)
+        ordered = [str(item) for item in parsed.ordered_chunk_ids]
         if not ordered:
             return candidates
         rank = {chunk_id: index for index, chunk_id in enumerate(ordered)}
@@ -1010,6 +1011,31 @@ def _normalize_gold_case(case: dict[str, Any]) -> dict[str, Any]:
         "metadata": dict(case.get("metadata") or {}),
         "enabled": bool(case.get("enabled", True)),
     }
+
+
+def evaluate_gold_set(store: Any, collection: str | None = None, actor_id: str = "local-user", k: int = 5) -> dict[str, Any]:
+    """Run the Gold Set and calculate Recall@K, MRR and keyword coverage."""
+    cases = store.list_gold_cases(collection, include_disabled=False)
+    results: list[dict[str, Any]] = []
+    recalls: list[float] = []
+    reciprocal_ranks: list[float] = []
+    keyword_coverages: list[float] = []
+    for case in cases:
+        hits = store.query(case["collection"], case["question"], limit=k, actor_id=actor_id)
+        expected_ids = set(case.get("expected_chunk_ids") or [])
+        expected_paths = set(case.get("expected_paths") or [])
+        expected_keywords = [str(item).lower() for item in case.get("expected_keywords") or []]
+        relevant = [index + 1 for index, item in enumerate(hits) if item.get("chunk_id") in expected_ids or item.get("path") in expected_paths]
+        recall = 1.0 if relevant else 0.0
+        reciprocal_rank = 1.0 / relevant[0] if relevant else 0.0
+        haystack = " ".join(str(item.get("content") or "").lower() for item in hits)
+        keyword_coverage = sum(keyword in haystack for keyword in expected_keywords) / len(expected_keywords) if expected_keywords else 1.0
+        recalls.append(recall)
+        reciprocal_ranks.append(reciprocal_rank)
+        keyword_coverages.append(keyword_coverage)
+        results.append({"case_id": case["case_id"], "hit_count": len(hits), "recall_at_k": recall, "reciprocal_rank": reciprocal_rank, "keyword_coverage": round(keyword_coverage, 4)})
+    count = len(results)
+    return {"collection": collection, "k": k, "case_count": count, "recall_at_k": round(sum(recalls) / count, 4) if count else 0.0, "mrr": round(sum(reciprocal_ranks) / count, 4) if count else 0.0, "keyword_coverage": round(sum(keyword_coverages) / count, 4) if count else 0.0, "results": results}
 
 
 def _gold_row_to_dict(row: dict[str, Any]) -> dict[str, Any]:

@@ -80,14 +80,13 @@ class HarnessRuntime:
             public_result = _public_result(result)
             context.status = _resolve_task_status(public_result)
 
-            # 5. 持久化
-            task_store.save_artifact(context.task_id, "graph_result", "result", public_result)# 保存图执行结果
+            # 5. 构造持久化 Bundle，状态、产物和事件一次提交
+            artifacts: list[tuple[str, str, Any]] = [("graph_result", "result", public_result)]
             if public_result.get("resume_checkpoint"):
-                task_store.save_artifact(context.task_id, "workflow_checkpoint", "resume", public_result["resume_checkpoint"])# 保存断点
+                artifacts.append(("workflow_checkpoint", "resume", public_result["resume_checkpoint"]))
             governance_artifact = _governance_artifact(public_result)
             if governance_artifact:
-                task_store.save_artifact(context.task_id, "governance", "governance", governance_artifact)# 保存治理信息
-            task_store.update_task(context.task_id, context.status, final_report) # 更新任务状态
+                artifacts.append(("governance", "governance", governance_artifact))
 
             # 6. 合并事件
             graph_events = result.get("events", [])
@@ -98,7 +97,8 @@ class HarnessRuntime:
              # 7. 判断最终状态
             final_message = "等待人工审核" if context.status == "waiting_review" else "任务执行完成"
             event = context.events.emit(context.task_id, "task", final_message, status=context.status)
-            task_store.append_event(event.to_dict())
+            all_events = [graph_event for graph_event in graph_events if graph_event.get("task_id")] + [event.to_dict()]
+            task_store.save_task_bundle(context.task_id, context.status, final_report, artifacts, all_events)
             combined_events = context.events.to_list()[:-1] + graph_events + [event.to_dict()]
             return {
                 "task_id": context.task_id,

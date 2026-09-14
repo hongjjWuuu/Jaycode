@@ -13,6 +13,7 @@ from uuid import uuid4
 
 from app.harness.events import BEIJING_TIME_FORMAT, BEIJING_TZ, utc_now_iso
 from app.providers.llm_provider import llm_provider
+from app.schemas.llm import MemoryExtractionResponse
 
 
 class SQLiteMemoryStore:
@@ -326,11 +327,12 @@ Return at most three candidates. If no durable fact exists, return should_store 
         fallback,
         agent="memory_extractor",
         prompt_version="memory_extractor.v1",
+        response_schema=MemoryExtractionResponse,
     )
     if result.get("answer_source") != "llm":
         return None
     try:
-        payload = json.loads(_json_object(str(result.get("text") or "")))
+        payload = llm_provider.parse_structured(result, MemoryExtractionResponse).model_dump()
     except (TypeError, ValueError, json.JSONDecodeError):
         return None
     if not payload.get("should_store"):

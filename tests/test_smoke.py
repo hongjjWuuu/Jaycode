@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 from app.agents.rag_tools import _chunk_text
 from app.graphs.workflow_compiler import validate_workflow_definition
 from app.main import app
+from app.persistence.rag_store import evaluate_gold_set
 from app.persistence.sqlite_store import SQLiteTaskStore
 
 
@@ -94,3 +95,17 @@ def test_rag_chunks_include_source_metadata() -> None:
     assert chunks
     assert chunks[0]["metadata"]["language"] == "py"
     assert chunks[0]["metadata"]["module_name"] == "example"
+
+
+def test_rag_gold_set_reports_recall_and_mrr() -> None:
+    class FakeRagStore:
+        def list_gold_cases(self, collection=None, include_disabled=False):
+            return [{"case_id": "gold-1", "collection": "docs", "question": "workflow", "expected_chunk_ids": ["docs#1"], "expected_paths": [], "expected_keywords": ["workflow"]}]
+
+        def query(self, collection, question, limit=5, actor_id="local-user"):
+            return [{"chunk_id": "docs#1", "path": "docs/workflow.md", "content": "Workflow validation"}]
+
+    result = evaluate_gold_set(FakeRagStore())
+    assert result["recall_at_k"] == 1.0
+    assert result["mrr"] == 1.0
+    assert result["keyword_coverage"] == 1.0

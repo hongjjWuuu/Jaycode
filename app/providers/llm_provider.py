@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from pydantic import BaseModel, ValidationError
+
 from app.core.security import execution_auth_context
 from app.harness.events import utc_now_iso
 from app.persistence.sqlite_store import task_store
@@ -249,6 +251,7 @@ class LLMProvider:
         prompt_version: str = "v1",
         use_active_prompt: bool = True,
         model_override: str | None = None,
+        response_schema: type[BaseModel] | None = None,
     ) -> dict[str, Any]:
         # 组合prompt：环境变量里指定的 prompt、版本数据库里激活的 prompt、版本传进来的 system prompt
         # 组合成最终使用的 prompt。
@@ -301,6 +304,11 @@ class LLMProvider:
                 ]
             )
             output_text = str(response.content)
+            if response_schema is not None:
+                start, end = output_text.find("{"), output_text.rfind("}")
+                if start < 0 or end < start:
+                    raise ValueError("LLM response did not contain a JSON object")
+                response_schema.model_validate_json(output_text[start : end + 1])
             latency_ms = self._elapsed_ms(started)
             token_usage = self._extract_token_usage(response)
             self._save_trace(
@@ -347,6 +355,18 @@ class LLMProvider:
                 "latency_ms": latency_ms,
                 "error_message": str(exc),
             }
+
+
+    def parse_structured(self, result: dict[str, Any], schema: type[BaseModel]) -> BaseModel:
+        """Validate JSON emitted by an LLM and preserve failure provenance."""
+        raw = str(result.get("text") or "").strip()
+        try:
+            start, end = raw.find("{"), raw.rfind("}")
+            if start < 0 or end < start:
+                raise ValueError("LLM response did not contain a JSON object")
+            return schema.model_validate_json(raw[start : end + 1])
+        except (ValueError, ValidationError) as exc:
+            raise ValueError(f"Structured LLM output validation failed: {exc}") from exc
 
 
     # 给“任务规划器”用，把一个目标拆成步骤列表

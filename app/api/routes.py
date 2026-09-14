@@ -40,7 +40,7 @@ from app.marketplace.installer import (
     uninstall_marketplace_package,
 )
 from app.persistence.memory_store import memory_store
-from app.persistence.rag_store import rag_store
+from app.persistence.rag_store import evaluate_gold_set, rag_store
 from app.persistence.sqlite_store import task_store
 from app.providers.llm_provider import llm_provider
 from app.providers.mcp_provider import mcp_provider
@@ -241,6 +241,11 @@ def delete_rag_gold_case(case_id: str) -> dict[str, object]:
     if not rag_store.delete_gold_case(case_id):
         raise HTTPException(status_code=404, detail="Gold case not found")
     return {"case_id": case_id, "deleted": True}
+
+
+@router.get("/rag/gold-cases/evaluate", tags=["RAG Knowledge Agent"])
+def evaluate_rag_gold_cases(collection: str | None = None, k: int = 5) -> dict[str, object]:
+    return evaluate_gold_set(rag_store, collection=collection, actor_id=execution_auth_context().actor_id, k=max(1, min(k, 50)))
 
 
 @router.get("/rag/status", tags=["RAG Knowledge Agent"])
