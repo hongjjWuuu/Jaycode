@@ -5,7 +5,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.core.config import settings
+from app.core.security import validate_security_configuration
 from app.main import app
+from app.marketplace import installer
 from app.marketplace.installer import _load_manifest, _safe_extract
 from app.providers.mcp_provider import RealMCPProvider
 
@@ -43,9 +45,8 @@ def test_marketplace_zip_path_traversal_is_rejected(tmp_path: Path) -> None:
     archive_path = tmp_path / "unsafe.zip"
     with ZipFile(archive_path, "w", ZIP_DEFLATED) as archive:
         archive.writestr("../escape.txt", "blocked")
-    with ZipFile(archive_path) as archive:
-        with pytest.raises(ValueError, match="unsafe path"):
-            _safe_extract(archive, tmp_path / "out")
+    with ZipFile(archive_path) as archive, pytest.raises(ValueError, match="Unsafe marketplace archive path"):
+        _safe_extract(archive, tmp_path / "out")
 
 
 def test_mcp_process_configuration_is_allowlisted(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -55,3 +56,20 @@ def test_mcp_process_configuration_is_allowlisted(monkeypatch: pytest.MonkeyPatc
         provider._validate_server_process_config({"command": "powershell.exe", "args": [], "env": {}})
     with pytest.raises(PermissionError, match="Shell-style"):
         provider._validate_server_process_config({"command": "python.exe", "args": ["-c", "print(1)"], "env": {}})
+
+
+def test_production_auth_configuration_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "app_env", "production")
+    monkeypatch.setattr(settings, "jaycode_auth_enabled", True)
+    monkeypatch.setattr(settings, "jaycode_api_keys", "")
+    with pytest.raises(RuntimeError, match="JAYCODE_API_KEYS"):
+        validate_security_configuration()
+
+
+def test_marketplace_install_requires_approval(monkeypatch: pytest.MonkeyPatch) -> None:
+    manifest = {"package_id": "test-package", "name": "Test", "package_type": "benchmark_pack", "version": "1"}
+    monkeypatch.setattr(installer, "_load_manifest", lambda _: dict(manifest))
+    monkeypatch.setattr(installer, "_validate_manifest", lambda _: None)
+    monkeypatch.setattr(installer.task_store, "get_latest_marketplace_install", lambda _: {"approval_status": "pending"})
+    with pytest.raises(PermissionError, match="approved"):
+        installer.install_marketplace_package("local-test")

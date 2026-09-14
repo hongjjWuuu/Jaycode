@@ -42,6 +42,9 @@ class SQLiteTaskStore:
                 )
                 """
             )
+            self._ensure_column(conn, "agent_task", "request_id", "TEXT")
+            self._ensure_column(conn, "agent_task", "actor_id", "TEXT")
+            self._ensure_column(conn, "agent_task", "role", "TEXT")
             # 任务事件流
             conn.execute(
                 """
@@ -134,6 +137,9 @@ class SQLiteTaskStore:
                 )
                 """
             )
+            self._ensure_column(conn, "llm_call_trace", "request_id", "TEXT")
+            self._ensure_column(conn, "llm_call_trace", "actor_id", "TEXT")
+            self._ensure_column(conn, "llm_call_trace", "role", "TEXT")
             # prompt 版本
             conn.execute(
                 """
@@ -348,6 +354,9 @@ class SQLiteTaskStore:
                 )
                 """
             )
+            self._ensure_column(conn, "skill_execution_log", "request_id", "TEXT")
+            self._ensure_column(conn, "skill_execution_log", "actor_id", "TEXT")
+            self._ensure_column(conn, "skill_execution_log", "role", "TEXT")
             # Skill 版本快照
             conn.execute(
                 """
@@ -380,6 +389,10 @@ class SQLiteTaskStore:
                 )
                 """
             )
+            self._ensure_column(conn, "plugin_marketplace_install", "approval_status", "TEXT NOT NULL DEFAULT 'approved'")
+            self._ensure_column(conn, "plugin_marketplace_install", "approved_by", "TEXT")
+            self._ensure_column(conn, "plugin_marketplace_install", "approved_at", "TEXT")
+            self._ensure_column(conn, "plugin_marketplace_install", "approval_reason", "TEXT")
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS security_audit_log (
@@ -399,15 +412,15 @@ class SQLiteTaskStore:
 
     # 不是“简单建表”，而是考虑了 schema 演进 这说明项目已经把“版本兼容”当成架构的一部分。
     # 四个方法构成了任务治理的基础动作： 创建任务 更新状态 写事件 存产物
-    def create_task(self, task_id: str, goal: str, project_path: str | None, status: str) -> None:
+    def create_task(self, task_id: str, goal: str, project_path: str | None, status: str, context: dict[str, Any] | None = None) -> None:
         now = utc_now_iso()
         with self._connect() as conn:
             conn.execute(
                 """
-                INSERT OR REPLACE INTO agent_task(task_id, goal, project_path, status, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT OR REPLACE INTO agent_task(task_id, goal, project_path, status, created_at, updated_at, request_id, actor_id, role)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (task_id, goal, project_path, status, now, now),
+                (task_id, goal, project_path, status, now, now, (context or {}).get("request_id"), (context or {}).get("actor_id"), (context or {}).get("role")),
             )
 
     def save_security_audit(self, record: dict[str, Any]) -> dict[str, Any]:
@@ -446,11 +459,22 @@ class SQLiteTaskStore:
             )
         return audit
 
-    def list_security_audits(self, limit: int = 100) -> list[dict[str, Any]]:
+    def list_security_audits(
+        self, limit: int = 100, actor_id: str | None = None, role: str | None = None,
+        action: str | None = None, status: str | None = None,
+    ) -> list[dict[str, Any]]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        for field, value in (("actor_id", actor_id), ("role", role), ("action", action), ("status", status)):
+            if value:
+                clauses.append(f"{field} = ?")
+                params.append(value)
+        where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+        params.append(max(1, min(limit, 1000)))
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT * FROM security_audit_log ORDER BY created_at DESC LIMIT ?",
-                (max(1, min(limit, 1000)),),
+                f"SELECT * FROM security_audit_log{where} ORDER BY created_at DESC LIMIT ?",
+                tuple(params),
             ).fetchall()
         result = []
         for row in rows:
@@ -721,6 +745,9 @@ class SQLiteTaskStore:
             "error_message": trace.get("error_message"),
             "latency_ms": int(trace.get("latency_ms") or 0),
             "token_usage": trace.get("token_usage") or {},
+            "request_id": trace.get("request_id"),
+            "actor_id": trace.get("actor_id"),
+            "role": trace.get("role"),
             "created_at": trace.get("created_at") or utc_now_iso(),
         }
         with self._connect() as conn:
@@ -728,9 +755,9 @@ class SQLiteTaskStore:
                 """
                 INSERT INTO llm_call_trace(
                     trace_id, agent, prompt_version, model, input_json, output_text,
-                    fallback_used, error_message, latency_ms, token_usage_json, created_at
+                    fallback_used, error_message, latency_ms, token_usage_json, request_id, actor_id, role, created_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     record["trace_id"],
@@ -743,6 +770,7 @@ class SQLiteTaskStore:
                     record["error_message"],
                     record["latency_ms"],
                     json.dumps(record["token_usage"], ensure_ascii=False),
+                    record["request_id"], record["actor_id"], record["role"],
                     record["created_at"],
                 ),
             )
@@ -752,7 +780,7 @@ class SQLiteTaskStore:
         limit = max(1, min(limit, 200))
         query = """
             SELECT trace_id, agent, prompt_version, model, input_json, output_text,
-                   fallback_used, error_message, latency_ms, token_usage_json, created_at
+                   fallback_used, error_message, latency_ms, token_usage_json, request_id, actor_id, role, created_at
             FROM llm_call_trace
         """
         params: list[Any] = []
@@ -1155,9 +1183,9 @@ class SQLiteTaskStore:
                 """
                 INSERT OR REPLACE INTO skill_execution_log(
                     log_id, skill_code, agent_code, task_id, input_json, output_json,
-                    status, error_message, latency_ms, created_at
+                    status, error_message, latency_ms, request_id, actor_id, role, created_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     log["log_id"],
@@ -1169,6 +1197,7 @@ class SQLiteTaskStore:
                     log.get("status") or "completed",
                     log.get("error_message"),
                     int(log.get("latency_ms") or 0),
+                    log.get("request_id"), log.get("actor_id"), log.get("role"),
                     created_at,
                 ),
             )
@@ -1183,7 +1212,7 @@ class SQLiteTaskStore:
     def list_skill_execution_logs(self, limit: int = 100, skill_code: str | None = None) -> list[dict[str, Any]]:
         query = """
             SELECT log_id, skill_code, agent_code, task_id, input_json, output_json,
-                   status, error_message, latency_ms, created_at
+                   status, error_message, latency_ms, request_id, actor_id, role, created_at
             FROM skill_execution_log
         """
         params: list[Any] = []
@@ -1246,9 +1275,10 @@ class SQLiteTaskStore:
                 """
                 INSERT OR REPLACE INTO plugin_marketplace_install(
                     install_id, package_id, name, package_type, version, source_url,
-                    status, summary_json, manifest_json, error_message, installed_at
+                    status, summary_json, manifest_json, error_message, approval_status,
+                    approved_by, approved_at, approval_reason, installed_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     record["install_id"],
@@ -1261,6 +1291,10 @@ class SQLiteTaskStore:
                     json.dumps(summary, ensure_ascii=False),
                     json.dumps(manifest, ensure_ascii=False),
                     record.get("error_message"),
+                    record.get("approval_status") or "approved",
+                    record.get("approved_by"),
+                    record.get("approved_at"),
+                    record.get("approval_reason"),
                     installed_at,
                 ),
             )
@@ -1269,7 +1303,8 @@ class SQLiteTaskStore:
     def list_marketplace_installs(self, limit: int = 80, package_type: str | None = None) -> list[dict[str, Any]]:
         query = """
             SELECT install_id, package_id, name, package_type, version, source_url,
-                   status, summary_json, manifest_json, error_message, installed_at
+                   status, summary_json, manifest_json, error_message, approval_status,
+                   approved_by, approved_at, approval_reason, installed_at
             FROM plugin_marketplace_install
         """
         params: list[Any] = []
@@ -1287,7 +1322,8 @@ class SQLiteTaskStore:
             row = conn.execute(
                 """
                 SELECT install_id, package_id, name, package_type, version, source_url,
-                       status, summary_json, manifest_json, error_message, installed_at
+                       status, summary_json, manifest_json, error_message, approval_status,
+                       approved_by, approved_at, approval_reason, installed_at
                 FROM plugin_marketplace_install
                 WHERE package_id = ?
                 ORDER BY installed_at DESC, rowid DESC
@@ -1296,6 +1332,26 @@ class SQLiteTaskStore:
                 (package_id,),
             ).fetchone()
         return self._marketplace_install_row_to_dict(row) if row else None
+
+    def set_marketplace_approval(
+        self, package_id: str, status: str, approved_by: str, reason: str | None = None
+    ) -> dict[str, Any] | None:
+        if status not in {"approved", "rejected"}:
+            raise ValueError("approval status must be approved or rejected")
+        latest = self.get_latest_marketplace_install(package_id)
+        if not latest:
+            return None
+        now = utc_now_iso()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE plugin_marketplace_install
+                SET approval_status = ?, approved_by = ?, approved_at = ?, approval_reason = ?
+                WHERE install_id = ?
+                """,
+                (status, approved_by, now, reason, latest["install_id"]),
+            )
+        return self.get_latest_marketplace_install(package_id)
 
     def _skill_plugin_row_to_dict(self, row: sqlite3.Row) -> dict[str, Any]:
         item = dict(row)

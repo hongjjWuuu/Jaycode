@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from app.harness.events import utc_now_iso
 from app.core.config import settings
+from app.core.security import execution_auth_context
 from app.persistence.rag_store import rag_store
 from app.persistence.sqlite_store import task_store
 from app.providers.llm_provider import llm_provider
@@ -73,6 +74,7 @@ def execute_skill(
     # 生成日志 ID 并开始计时
     log_id = f"skill_log_{uuid4().hex}"
     started = time.perf_counter()
+    auth_context = execution_auth_context()
     # 这里分两条路真正执行 Skill
     try:
         # 路线 A：注册在 registry 里的内置 Skill
@@ -96,6 +98,9 @@ def execute_skill(
                 "output": output,
                 "status": "completed",
                 "latency_ms": latency_ms,
+                "request_id": auth_context.request_id,
+                "actor_id": auth_context.actor_id,
+                "role": auth_context.role,
                 "created_at": utc_now_iso(),
             }
         )
@@ -121,6 +126,9 @@ def execute_skill(
                 "status": "failed",
                 "error_message": str(exc),
                 "latency_ms": latency_ms,
+                "request_id": auth_context.request_id,
+                "actor_id": auth_context.actor_id,
+                "role": auth_context.role,
                 "created_at": utc_now_iso(),
             }
         )

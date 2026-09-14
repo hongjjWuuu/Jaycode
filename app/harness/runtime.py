@@ -4,6 +4,7 @@ from collections.abc import Callable
 from typing import Any
 
 from app.harness.context import AgentExecutionContext
+from app.core.security import execution_auth_context
 from app.persistence.sqlite_store import task_store
 
 
@@ -20,7 +21,15 @@ class HarnessRuntime:
         variables: dict[str, Any] | None = None,
     ) -> AgentExecutionContext:
         context = AgentExecutionContext(goal=goal, project_path=project_path, variables=variables or {})# 创建上下文
-        task_store.create_task(context.task_id, goal, project_path, "created")# 任务信息落库
+        auth_context = execution_auth_context()
+        context.variables.setdefault("request_id", auth_context.request_id)
+        context.variables.setdefault("actor_id", auth_context.actor_id)
+        context.variables.setdefault("role", auth_context.role)
+        task_store.create_task(context.task_id, goal, project_path, "created", {
+            "request_id": auth_context.request_id,
+            "actor_id": auth_context.actor_id,
+            "role": auth_context.role,
+        })# 任务信息落库
         event = context.events.emit(context.task_id, "task", "任务已创建", status="created") # 记录事件
         task_store.append_event(event.to_dict())# 事件落库
         return context

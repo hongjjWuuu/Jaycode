@@ -7,6 +7,7 @@ from typing import Any
 from uuid import uuid4
 
 from app.harness.events import utc_now_iso
+from app.core.security import execution_auth_context
 from app.persistence.sqlite_store import task_store
 
 
@@ -801,6 +802,7 @@ class LLMProvider:
         token_usage: dict[str, Any],
     ) -> None:
         try:
+            auth_context = execution_auth_context()
             task_store.save_llm_trace(
                 {
                     "trace_id": trace_id,
@@ -813,6 +815,9 @@ class LLMProvider:
                     "error_message": error_message,
                     "latency_ms": latency_ms,
                     "token_usage": token_usage,
+                    "request_id": auth_context.request_id,
+                    "actor_id": auth_context.actor_id,
+                    "role": auth_context.role,
                     "created_at": utc_now_iso(),
                 }
             )

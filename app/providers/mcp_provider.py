@@ -4,6 +4,7 @@ import json
 import os
 import queue
 import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -13,7 +14,7 @@ import re
 
 from app.agents.project_tools import EXCLUDED_DIRS
 from app.core.config import settings
-from app.core.security import current_auth_context
+from app.core.security import execution_auth_context
 from app.harness.events import utc_now_iso
 from app.persistence.sqlite_store import task_store
 
@@ -197,6 +198,9 @@ class RealMCPProvider:
     real MCP JSON-RPC protocol over stdio.
     """
 
+    def __init__(self) -> None:
+        self.project_root = Path(__file__).resolve().parents[2]
+
     # 从 task_store 里拿 MCP server 和工具的数量
     # 返回当前 provider 状态
     def status(self) -> dict[str, Any]:
@@ -211,6 +215,8 @@ class RealMCPProvider:
 
     # MCP 管理页保存 server 配置；把 server 配置存入数据库
     def save_server(self, server: dict[str, Any]) -> dict[str, Any]:
+        if str(server.get("transport") or "stdio") == "stdio":
+            self._validate_server_process_config(server)
         return task_store.save_mcp_server(server)
 
     # 前端 MCP 页面加载 server 列表；列出已保存的 MCP server
@@ -220,6 +226,11 @@ class RealMCPProvider:
     # 启用或禁用某个 server 
     # enabled=True 时状态变成 "enabled" 否则变成 "disabled"
     def set_server_enabled(self, server_id: str, enabled: bool) -> dict[str, Any] | None:
+        if enabled:
+            server = task_store.get_mcp_server(server_id)
+            if not server:
+                return None
+            self._validate_server_process_config(server)
         status = "enabled" if enabled else "disabled"
         return task_store.update_mcp_server_status(server_id, status, None, enabled=enabled)
 
@@ -318,14 +329,14 @@ class RealMCPProvider:
             )
             output = {"provider": "mcp", "server_id": server_id, "tool_name": tool_name, "result": result}
             mcp_error = self._mcp_error_message(result)
-            context = current_auth_context()
+            context = execution_auth_context()
             task_store.save_mcp_call_log(
                 {
                     "call_id": call_id,
                     "server_id": server_id,
                     "tool_name": tool_name,
                     "agent_code": agent_code,
-                    "input": arguments,
+                    "input": self._redact(arguments),
                     "output": output,
                     "status": "failed" if mcp_error else "completed",
                     "error_message": mcp_error,
@@ -340,14 +351,15 @@ class RealMCPProvider:
             )
             return {**output, "call_id": call_id, "status": "failed" if mcp_error else "completed", "error_message": mcp_error}
         except Exception as exc:
-            context = current_auth_context()
+            context = execution_auth_context()
+            server = task_store.get_mcp_server(server_id) or {}
             task_store.save_mcp_call_log(
                 {
                     "call_id": call_id,
                     "server_id": server_id,
                     "tool_name": tool_name,
                     "agent_code": agent_code,
-                    "input": arguments,
+                    "input": self._redact(arguments),
                     "output": {},
                     "status": "failed",
                     "error_message": str(exc),
@@ -355,6 +367,7 @@ class RealMCPProvider:
                     "request_id": context.request_id if context else "",
                     "actor_id": context.actor_id if context else "internal",
                     "role": context.role if context else "system-agent",
+                    "command_summary": Path(str(server.get("command") or "")).name,
                     "exit_code": None,
                     "created_at": utc_now_iso(),
                 }
@@ -414,6 +427,16 @@ class RealMCPProvider:
         if protected.intersection(key.upper() for key in env):
             raise PermissionError("MCP env cannot override protected runtime variables")
 
+    def _redact(self, value: Any) -> Any:
+        if isinstance(value, dict):
+            return {
+                key: "[REDACTED]" if any(token in key.lower() for token in ("token", "secret", "password", "api_key", "apikey")) else self._redact(item)
+                for key, item in value.items()
+            }
+        if isinstance(value, list):
+            return [self._redact(item) for item in value]
+        return value
+
 
     # 协议通信核心 
 # 拼出命令行
@@ -430,46 +453,41 @@ class RealMCPProvider:
 
     def _request(self, server: dict[str, Any], method: str, params: dict[str, Any]) -> tuple[dict[str, Any], int | None]:
         self._validate_server_process_config(server)
-        command = [str(server["command"]), *server.get("args", [])]
-        deadline = time.perf_counter() + float(max(1, settings.jaycode_mcp_max_runtime_seconds))
-        env = os.environ.copy()
-        env.update({str(k): str(v) for k, v in (server.get("env") or {}).items()})
-        messages: queue.Queue[dict[str, Any] | None] = queue.Queue()
-        stderr_chunks: list[bytes] = []
+        request_id = f"mcp_worker_{uuid4().hex}"
+        worker_env = os.environ.copy()
+        worker_env.update({
+            "JAYCODE_MCP_ALLOWED_COMMANDS": settings.jaycode_mcp_allowed_commands,
+            "JAYCODE_MCP_MAX_RUNTIME_SECONDS": str(settings.jaycode_mcp_max_runtime_seconds),
+            "JAYCODE_MCP_MAX_OUTPUT_BYTES": str(settings.jaycode_mcp_max_output_bytes),
+            "JAYCODE_REQUEST_ID": request_id,
+        })
+        payload = json.dumps({"server": server, "method": method, "params": params, "request_id": request_id}, ensure_ascii=False, separators=(",", ":"))
         process = subprocess.Popen(
-            command,
+            [sys.executable, "-m", "app.providers.mcp_worker"],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=False,
-            env=env,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            cwd=str(self.project_root),
+            env=worker_env,
+            shell=False,
         )
-        reader = threading.Thread(target=self._read_messages, args=(process, messages), daemon=True)
-        reader.start()
-        stderr_reader = threading.Thread(target=self._read_stderr, args=(process, stderr_chunks), daemon=True)
-        stderr_reader.start()
         try:
-            request_id = 1
-            self._write_message(
-                process,
-                {
-                    "jsonrpc": "2.0",
-                    "id": request_id,
-                    "method": "initialize",
-                    "params": {
-                        "protocolVersion": "2024-11-05",
-                        "capabilities": {},
-                        "clientInfo": {"name": "Jaycode", "version": "0.1.0"},
-                    },
-                },
-            )
-            self._read_response(messages, request_id, stderr_chunks, max(0.1, deadline - time.perf_counter()))
-            self._write_message(process, {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}})
-            request_id += 1
-            self._write_message(process, {"jsonrpc": "2.0", "id": request_id, "method": method, "params": params})
-            result = self._read_response(messages, request_id, stderr_chunks, max(0.1, deadline - time.perf_counter()))
-            self._stop_process(process)
-            return result, process.returncode
+            output, stderr = process.communicate(payload + "\n", timeout=float(max(1, settings.jaycode_mcp_max_runtime_seconds)) + 2)
+            if process.returncode != 0:
+                detail = (output or stderr or "MCP worker failed").strip()[-2000:]
+                raise RuntimeError(detail)
+            response = json.loads((output or "").strip().splitlines()[-1])
+            if not response.get("ok"):
+                raise RuntimeError(str(response.get("error") or "MCP worker failed"))
+            result = response.get("result")
+            return (result if isinstance(result, dict) else {"result": result}), process.returncode
+        except subprocess.TimeoutExpired as exc:
+            process.kill()
+            process.communicate()
+            raise TimeoutError("MCP Worker request timed out") from exc
         finally:
             self._stop_process(process)
 

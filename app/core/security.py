@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import contextvars
 import hashlib
-import json
 import secrets
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable
+from typing import Any
 from uuid import uuid4
 
 from fastapi import Request
@@ -32,6 +32,14 @@ def current_auth_context() -> AuthContext | None:
     return _request_context.get()
 
 
+def execution_auth_context() -> AuthContext:
+    """Return the request identity or a clearly-labelled internal identity."""
+    context = current_auth_context()
+    if context is not None:
+        return context
+    return AuthContext("system-agent", "system-agent", f"internal_{uuid4().hex}", authenticated=False)
+
+
 def _configured_keys() -> dict[str, str]:
     result: dict[str, str] = {}
     for item in settings.jaycode_api_keys.split(","):
@@ -46,6 +54,14 @@ def _configured_keys() -> dict[str, str]:
 
 def _auth_required() -> bool:
     return settings.jaycode_auth_enabled or settings.app_env.lower() in {"prod", "production"}
+
+
+def validate_security_configuration() -> None:
+    """Fail closed before serving traffic with an unusable production auth setup."""
+    if settings.app_env.lower() in {"prod", "production"} and not settings.jaycode_auth_enabled:
+        raise RuntimeError("Production cannot disable JAYCODE_AUTH_ENABLED")
+    if settings.app_env.lower() in {"prod", "production"} and not _configured_keys():
+        raise RuntimeError("Production requires JAYCODE_API_KEYS")
 
 
 def _auth_error(error_code: str, message: str, request_id: str, status_code: int) -> JSONResponse:
@@ -89,7 +105,7 @@ def required_role(method: str, path: str) -> str:
         "/api/v1/security",
     )
     if normalized.startswith(admin_prefixes):
-        if normalized.endswith("/execute") or normalized.endswith("/allow-check"):
+        if normalized.endswith(("/execute", "/allow-check")):
             return "user"
         if normalized.endswith("/preview"):
             return "admin"
@@ -113,6 +129,22 @@ def _action_for_request(method: str, path: str) -> tuple[str, str, str]:
 
 def _audit(context: AuthContext, method: str, path: str, status: str, metadata: dict[str, Any] | None = None) -> None:
     action, resource_type, resource_id = _action_for_request(method, path)
+    task_store.save_security_audit(
+        {
+            "request_id": context.request_id,
+            "actor_id": context.actor_id,
+            "role": context.role,
+            "action": action,
+            "resource_type": resource_type,
+            "resource_id": resource_id,
+            "status": status,
+            "metadata": metadata or {},
+        }
+    )
+
+
+def audit_action(action: str, resource_type: str, resource_id: str = "", status: str = "completed", metadata: dict[str, Any] | None = None) -> None:
+    context = execution_auth_context()
     task_store.save_security_audit(
         {
             "request_id": context.request_id,

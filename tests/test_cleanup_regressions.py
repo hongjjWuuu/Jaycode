@@ -7,9 +7,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SCANNED_ROOTS = ("README.md", "docs", "app", "web/src", "examples", "scripts", "tests")
 FORBIDDEN_MARKERS = (
-    "f:/jayagent/jaycode",
-    "devagent",
-    "x_devagent",
+    "f:/jayagent/" + "jaycode",
+    "dev" + "agent",
+    "x_" + "dev" + "agent",
     "phase_1",
     "phase_3_runtime",
     "phase_4_web_workbench",

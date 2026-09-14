@@ -4,7 +4,7 @@ import json
 from collections.abc import AsyncIterator
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 from app.agents.marketplace_tools import check_permission, list_tools
@@ -32,6 +32,7 @@ from app.graphs.workflow_compiler import (
 from app.harness.events import utc_now_iso
 from app.harness.policy import tool_policy
 from app.harness.runtime import harness_runtime
+from app.core.security import audit_action, execution_auth_context
 from app.marketplace.catalog import marketplace_catalog
 from app.persistence.memory_store import memory_store
 from app.marketplace.installer import install_marketplace_package, preview_marketplace_package, uninstall_marketplace_package
@@ -199,15 +200,15 @@ def ingest_rag(request: RagIngestRequest) -> RagIngestResponse:
 
 
 @router.post("/rag/query", response_model=RagQueryResponse, tags=["RAG Knowledge Agent"])
-def query_rag(request: RagQueryRequest, x_jaycode_actor: str = Header("local-user")) -> RagQueryResponse:
-    actor_id = request.actor_id or x_jaycode_actor
+def query_rag(request: RagQueryRequest) -> RagQueryResponse:
+    actor_id = execution_auth_context().actor_id
     results = rag_store.query(request.collection, request.question, request.limit, actor_id=actor_id)
     return RagQueryResponse(collection=request.collection, question=request.question, results=results)
 
 
 @router.get("/rag/documents", tags=["RAG Knowledge Agent"])
-def list_rag_documents(collection: str | None = None, x_jaycode_actor: str = Header("local-user")) -> dict[str, object]:
-    return {"documents": rag_store.list_documents(collection, actor_id=x_jaycode_actor)}
+def list_rag_documents(collection: str | None = None) -> dict[str, object]:
+    return {"documents": rag_store.list_documents(collection, actor_id=execution_auth_context().actor_id)}
 
 
 @router.post("/rag/documents/acl", tags=["RAG Knowledge Agent"])
@@ -477,8 +478,11 @@ def list_marketplace_installs(limit: int = 80, package_type: str | None = None) 
 def preview_marketplace(payload: dict[str, object]) -> dict[str, object]:
     source_url = str(payload.get("source_url") or "").strip()
     try:
-        return preview_marketplace_package(source_url)
+        result = preview_marketplace_package(source_url)
+        audit_action("marketplace_preview", "marketplace_package", str(result.get("manifest", {}).get("package_id") or ""), metadata={"source_url": source_url})
+        return result
     except Exception as exc:
+        audit_action("marketplace_preview", "marketplace_package", status="failed", metadata={"source_url": source_url, "error": str(exc)})
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
@@ -488,9 +492,31 @@ def install_marketplace(payload: dict[str, object]) -> dict[str, object]:
     try:
         install = install_marketplace_package(source_url)
     except Exception as exc:
+        audit_action("marketplace_install", "marketplace_package", status="failed", metadata={"source_url": source_url, "error": str(exc)})
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    audit_action("marketplace_install", "marketplace_package", str(install.get("package_id") or ""), metadata={"source_url": source_url})
     ensure_builtin_skills_seeded()
     return {"install": install}
+
+
+@router.post("/marketplace/packages/{package_id}/approve", tags=["Plugin Marketplace"])
+def approve_marketplace(package_id: str, payload: dict[str, object] | None = None) -> dict[str, object]:
+    context = execution_auth_context()
+    result = task_store.set_marketplace_approval(package_id, "approved", context.actor_id, str((payload or {}).get("reason") or "") or None)
+    if not result:
+        raise HTTPException(status_code=404, detail="Marketplace package preview not found")
+    audit_action("marketplace_approve", "marketplace_package", package_id, metadata={"reason": result.get("approval_reason")})
+    return {"package": result}
+
+
+@router.post("/marketplace/packages/{package_id}/reject", tags=["Plugin Marketplace"])
+def reject_marketplace(package_id: str, payload: dict[str, object] | None = None) -> dict[str, object]:
+    context = execution_auth_context()
+    result = task_store.set_marketplace_approval(package_id, "rejected", context.actor_id, str((payload or {}).get("reason") or "") or None)
+    if not result:
+        raise HTTPException(status_code=404, detail="Marketplace package preview not found")
+    audit_action("marketplace_reject", "marketplace_package", package_id, metadata={"reason": result.get("approval_reason")})
+    return {"package": result}
 
 
 @router.delete("/marketplace/packages/{package_id}", tags=["Plugin Marketplace"])
@@ -501,6 +527,7 @@ def uninstall_marketplace(package_id: str) -> dict[str, object]:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    audit_action("marketplace_uninstall", "marketplace_package", package_id)
     ensure_builtin_skills_seeded()
     return {"uninstall": uninstall}
 
@@ -527,6 +554,7 @@ def list_mcp_servers() -> dict[str, object]:
 @router.post("/mcp/servers", response_model=McpServerConfigResponse, tags=["MCP Tool Marketplace"])
 def save_mcp_server(request: McpServerConfigRequest) -> McpServerConfigResponse:
     server = mcp_provider.real.save_server(request.model_dump())
+    audit_action("mcp_server_save", "mcp_server", str(server.get("server_id") or ""))
     return McpServerConfigResponse(server=server)
 
 
@@ -535,14 +563,18 @@ def set_mcp_server_enabled(server_id: str, request: McpToolToggleRequest) -> dic
     server = mcp_provider.real.set_server_enabled(server_id, request.enabled)
     if not server:
         raise HTTPException(status_code=404, detail="MCP server not found")
+    audit_action("mcp_server_enable" if request.enabled else "mcp_server_disable", "mcp_server", server_id)
     return {"server": server}
 
 
 @router.post("/mcp/servers/{server_id}/discover", tags=["MCP Tool Marketplace"])
 def discover_mcp_server_tools(server_id: str) -> dict[str, object]:
     try:
-        return mcp_provider.real.discover_tools(server_id)
+        result = mcp_provider.real.discover_tools(server_id)
+        audit_action("mcp_server_discover", "mcp_server", server_id)
+        return result
     except Exception as exc:
+        audit_action("mcp_server_discover", "mcp_server", server_id, status="failed", metadata={"error": str(exc)})
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
@@ -575,19 +607,24 @@ def set_registered_mcp_tool_enabled(server_id: str, tool_name: str, request: Mcp
 
 @router.post("/mcp/tools/approval", tags=["MCP Tool Marketplace"])
 def set_mcp_tool_approval(request: McpToolApprovalRequest) -> dict[str, object]:
-    return {"approval": mcp_provider.real.set_approval(request.agent_code, request.server_id, request.tool_name, request.allowed, request.reason)}
+    result = mcp_provider.real.set_approval(request.agent_code, request.server_id, request.tool_name, request.allowed, request.reason)
+    audit_action("mcp_tool_approve", "mcp_tool", f"{request.server_id}:{request.tool_name}", metadata={"allowed": request.allowed})
+    return {"approval": result}
 
 
 @router.post("/mcp/tools/call", tags=["MCP Tool Marketplace"])
 def call_mcp_tool(request: McpToolCallRequest) -> dict[str, object]:
     try:
-        return mcp_provider.call_tool(
+        result = mcp_provider.call_tool(
             request.tool_name,
             request.arguments,
             server_id=request.server_id,
             agent_code=request.agent_code,
         )
+        audit_action("mcp_tool_call", "mcp_tool", f"{request.server_id or 'local'}:{request.tool_name}", metadata={"status": result.get("status")})
+        return result
     except Exception as exc:
+        audit_action("mcp_tool_call", "mcp_tool", f"{request.server_id or 'local'}:{request.tool_name}", status="failed", metadata={"error": str(exc)})
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
@@ -794,6 +831,7 @@ def create_workflow(request: WorkflowSaveRequest) -> WorkflowSaveResponse:
         request.nodes,
         request.edges,
     )
+    audit_action("workflow_save", "workflow", request.workflow_id)
     return WorkflowSaveResponse(workflow=workflow)
 
 
@@ -814,6 +852,7 @@ def update_workflow(workflow_id: str, request: WorkflowSaveRequest) -> WorkflowS
         request.nodes,
         request.edges,
     )
+    audit_action("workflow_update", "workflow", workflow_id)
     return WorkflowSaveResponse(workflow=workflow)
 
 @router.post("/agents/collaborate", response_model=CollaborationResponse, tags=["Multi-Agent Collaboration"])
@@ -1031,13 +1070,10 @@ def add_knowledge_note(request: KnowledgeNoteRequest) -> KnowledgeNoteResponse:
 
 
 @router.post("/memories/extract", response_model=list[MemoryRecordResponse], tags=["RAG Knowledge Agent"])
-def extract_memory_candidates(
-    request: MemoryExtractRequest,
-    x_jaycode_actor: str | None = Header(default=None),
-    x_jaycode_role: str | None = Header(default=None),
-) -> list[dict[str, object]]:
+def extract_memory_candidates(request: MemoryExtractRequest) -> list[dict[str, object]]:
     try:
-        _authorize_memory(request.scope, request.scope_id, "extract", x_jaycode_actor, x_jaycode_role)
+        context = execution_auth_context()
+        _authorize_memory(request.scope, request.scope_id, "extract", context.actor_id, context.role)
         return memory_store.extract_candidates(
             request.text,
             scope=request.scope,
@@ -1054,10 +1090,9 @@ def list_memories(
     scope: str | None = None,
     scope_id: str | None = None,
     status: str | None = None,
-    x_jaycode_actor: str | None = Header(default=None),
-    x_jaycode_role: str | None = Header(default=None),
 ) -> list[dict[str, object]]:
-    actor, role = _memory_actor(x_jaycode_actor, x_jaycode_role)
+    context = execution_auth_context()
+    actor, role = context.actor_id, context.role
     if scope in {"project", "team"}:
         _authorize_memory(scope, scope_id or "default", "list", actor, role)
     elif role != "admin":
@@ -1070,13 +1105,12 @@ def list_memories(
 def confirm_memory(
     memory_id: str,
     request: MemoryConfirmRequest,
-    x_jaycode_actor: str | None = Header(default=None),
-    x_jaycode_role: str | None = Header(default=None),
 ) -> dict[str, object]:
     memory = memory_store.get_memory(memory_id)
     if not memory:
         raise HTTPException(status_code=404, detail="Memory not found")
-    _authorize_memory(memory["scope"], memory["scope_id"], "confirm", x_jaycode_actor, x_jaycode_role)
+    context = execution_auth_context()
+    _authorize_memory(memory["scope"], memory["scope_id"], "confirm", context.actor_id, context.role)
     collection = request.collection or ("project-memory" if memory["scope"] == "project" else f"user-memory/{memory['scope_id']}")
     saved = rag_store.add_note(collection, f"memory/{memory_id}", memory["content"])
     confirmed = memory_store.confirm(memory_id, saved["path"])
@@ -1088,13 +1122,12 @@ def confirm_memory(
 @router.post("/memories/{memory_id}/reject", response_model=MemoryRecordResponse, tags=["RAG Knowledge Agent"])
 def reject_memory(
     memory_id: str,
-    x_jaycode_actor: str | None = Header(default=None),
-    x_jaycode_role: str | None = Header(default=None),
 ) -> dict[str, object]:
     memory = memory_store.get_memory(memory_id)
     if not memory:
         raise HTTPException(status_code=404, detail="Memory not found")
-    _authorize_memory(memory["scope"], memory["scope_id"], "reject", x_jaycode_actor, x_jaycode_role)
+    context = execution_auth_context()
+    _authorize_memory(memory["scope"], memory["scope_id"], "reject", context.actor_id, context.role)
     rejected = memory_store.reject(memory_id)
     if not rejected:
         raise HTTPException(status_code=404, detail="Memory not found")
@@ -1104,13 +1137,12 @@ def reject_memory(
 @router.delete("/memories/{memory_id}", tags=["RAG Knowledge Agent"])
 def delete_memory(
     memory_id: str,
-    x_jaycode_actor: str | None = Header(default=None),
-    x_jaycode_role: str | None = Header(default=None),
 ) -> dict[str, bool]:
     memory = memory_store.get_memory(memory_id)
     if not memory:
         raise HTTPException(status_code=404, detail="Memory not found")
-    _authorize_memory(memory["scope"], memory["scope_id"], "delete", x_jaycode_actor, x_jaycode_role)
+    context = execution_auth_context()
+    _authorize_memory(memory["scope"], memory["scope_id"], "delete", context.actor_id, context.role)
     if memory.get("rag_path"):
         collection = "project-memory" if memory["scope"] == "project" else f"user-memory/{memory['scope_id']}"
         rag_store.delete_note(collection, memory["rag_path"])
@@ -1119,18 +1151,14 @@ def delete_memory(
     return {"deleted": True}
 
 
-def _memory_actor(actor: str | None, role: str | None) -> tuple[str, str]:
-    return (actor or "local-user", (role or "member").lower())
-
-
 def _authorize_memory(scope: str, scope_id: str, action: str, actor: str | None, role: str | None) -> None:
-    actor_id, actor_role = _memory_actor(actor, role)
+    actor_id, actor_role = actor or "unknown", (role or "user").lower()
     if scope == "user":
         if actor_id != scope_id and actor_role != "admin":
             raise HTTPException(status_code=403, detail="User memory is isolated by actor identity.")
         return
-    if scope == "project" and actor_role not in {"editor", "admin"}:
-        raise HTTPException(status_code=403, detail="Project memory requires editor or admin role.")
+    if scope == "project" and action not in {"list", "read"} and actor_role != "admin":
+        raise HTTPException(status_code=403, detail="Admin role is required for project memory changes.")
     if scope == "team" and action in {"confirm", "reject", "delete"} and actor_role != "admin":
         raise HTTPException(status_code=403, detail="Team memory confirmation requires admin role.")
     if scope not in {"user", "project", "team"}:
@@ -1161,7 +1189,9 @@ def approve_task(task_id: str, request: HumanReviewRequest) -> HumanReviewRespon
 
      # 2. 有断点 → 恢复执行
     if checkpoint:
-        return _resume_after_human_review(task_id, checkpoint, "approved", request.comment)
+        result = _resume_after_human_review(task_id, checkpoint, "approved", request.comment)
+        audit_action("task_approve", "task", task_id)
+        return result
     
     # 3. 状态是 waiting_review 但没有断点 → 异常
     task = task_store.get_task(task_id)
@@ -1169,23 +1199,31 @@ def approve_task(task_id: str, request: HumanReviewRequest) -> HumanReviewRespon
         raise HTTPException(status_code=409, detail="Workflow is waiting for review but no resume checkpoint was found.")
     
     # 4. 普通情况 → 只记录审批，不恢复
-    return _record_human_review(task_id, "approved", "completed", request.comment)
+    result = _record_human_review(task_id, "approved", "completed", request.comment)
+    audit_action("task_approve", "task", task_id)
+    return result
 
 
 @router.post("/tasks/{task_id}/reject", response_model=HumanReviewResponse, tags=["Task Runtime"])
 def reject_task(task_id: str, request: HumanReviewRequest) -> HumanReviewResponse:
     checkpoint = _latest_resume_checkpoint(task_id)
     if checkpoint and _retry_pre_run_confirmation(task_id, checkpoint, "rejected", request.comment):
+        audit_action("task_reject", "task", task_id)
         return HumanReviewResponse(task_id=task_id, status="waiting_review", action="rejected", comment=request.comment)
-    return _record_human_review(task_id, "rejected", "rejected", request.comment)
+    result = _record_human_review(task_id, "rejected", "rejected", request.comment)
+    audit_action("task_reject", "task", task_id)
+    return result
 
 
 @router.post("/tasks/{task_id}/revise", response_model=HumanReviewResponse, tags=["Task Runtime"])
 def revise_task(task_id: str, request: HumanReviewRequest) -> HumanReviewResponse:
     checkpoint = _latest_resume_checkpoint(task_id)
     if checkpoint and _retry_pre_run_confirmation(task_id, checkpoint, "revised", request.comment):
+        audit_action("task_resume", "task", task_id)
         return HumanReviewResponse(task_id=task_id, status="waiting_review", action="revised", comment=request.comment)
-    return _record_human_review(task_id, "revised", "waiting_review", request.comment)
+    result = _record_human_review(task_id, "revised", "waiting_review", request.comment)
+    audit_action("task_resume", "task", task_id)
+    return result
 
 
 def _resolve_task_workflow(request: TaskRunRequest) -> dict[str, object]:
@@ -1842,5 +1880,8 @@ def _review_content(action: str, comment: str | None) -> str:
 
 
 @router.get("/security/audit", tags=["Security"])
-def list_security_audit(limit: int = 100) -> dict[str, object]:
-    return {"audits": task_store.list_security_audits(limit)}
+def list_security_audit(
+    limit: int = 100, actor_id: str | None = None, role: str | None = None,
+    action: str | None = None, status: str | None = None,
+) -> dict[str, object]:
+    return {"audits": task_store.list_security_audits(limit, actor_id, role, action, status)}

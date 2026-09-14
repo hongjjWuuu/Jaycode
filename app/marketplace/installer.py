@@ -38,13 +38,32 @@ SUPPORTED_PACKAGE_TYPES = {
 def preview_marketplace_package(source_url: str) -> dict[str, Any]:
     manifest = _load_manifest(source_url)
     _validate_manifest(manifest)
-    return {"manifest": _public_manifest(manifest), "summary": _summarize_manifest(manifest)}
+    summary = _summarize_manifest(manifest)
+    task_store.save_marketplace_install(
+        {
+            "install_id": f"mpi_{uuid4().hex}",
+            "package_id": str(manifest.get("package_id") or manifest.get("name")),
+            "name": str(manifest.get("name") or manifest.get("package_id")),
+            "package_type": str(manifest["package_type"]),
+            "version": str(manifest.get("version") or ""),
+            "source_url": source_url,
+            "status": "previewed",
+            "approval_status": "pending",
+            "summary": summary,
+            "manifest": _public_manifest(manifest),
+        }
+    )
+    return {"manifest": _public_manifest(manifest), "summary": summary, "approval_status": "pending"}
 
 
 def install_marketplace_package(source_url: str) -> dict[str, Any]:
     manifest = _load_manifest(source_url)
     _validate_manifest(manifest)
     package_type = str(manifest["package_type"])
+    package_id = str(manifest.get("package_id") or manifest.get("name"))
+    latest = task_store.get_latest_marketplace_install(package_id)
+    if not latest or latest.get("approval_status") != "approved":
+        raise PermissionError("Marketplace package must be approved before installation")
     install_id = f"mpi_{uuid4().hex}"
     summary: dict[str, Any] = {}
     try:
