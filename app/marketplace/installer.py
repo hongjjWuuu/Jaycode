@@ -14,8 +14,7 @@ from uuid import uuid4
 
 from app.core.config import settings
 from app.marketplace.catalog import get_builtin_manifest
-from app.persistence.rag_store import rag_store
-from app.persistence.sqlite_store import task_store
+from app.persistence.factory import rag_store, task_store
 from app.providers.llm_provider import llm_provider
 from app.skills.contract import validate_skill_contract
 

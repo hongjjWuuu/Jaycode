@@ -398,13 +398,13 @@ class EmbeddingProvider:
 
 
 class PgVectorRagStore:
-    def __init__(self):
+    def __init__(self, database_url: str | None = None):
         config = _config()
-        self.database_url = config.get("PGVECTOR_DATABASE_URL") or config.get("DATABASE_URL", "")
+        self.database_url = database_url or config.get("DATABASE_URL") or config.get("PGVECTOR_DATABASE_URL", "")
         self.dimension = int(config.get("JAYCODE_EMBEDDING_DIM", "1536") or 1536)
         self.embedding = EmbeddingProvider(self.dimension)
         if not self.database_url:
-            raise RuntimeError("PGVECTOR_DATABASE_URL or DATABASE_URL is required for pgvector RAG store")
+            raise RuntimeError("DATABASE_URL is required for pgvector RAG store")
         # 建表
         self._init_schema()
 
@@ -1105,4 +1105,16 @@ def _acl_allows(raw_acl: Any, actor_id: str) -> bool:
     return "*" in principals or actor_id in principals
 
 
-rag_store = create_rag_store()
+class _LazyRagStore:
+    """Delay backend construction until use so importing RAG helpers has no I/O."""
+
+    def __init__(self) -> None:
+        self._store: SQLiteRagStore | PgVectorRagStore | None = None
+
+    def __getattr__(self, name: str) -> Any:
+        if self._store is None:
+            self._store = create_rag_store()
+        return getattr(self._store, name)
+
+
+rag_store = _LazyRagStore()

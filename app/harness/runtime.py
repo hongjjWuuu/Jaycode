@@ -10,7 +10,7 @@ from typing import Any
 from app.core.config import settings
 from app.core.security import execution_auth_context
 from app.harness.context import AgentExecutionContext
-from app.persistence.sqlite_store import task_store
+from app.persistence.factory import task_store
 
 GraphRunner = Callable[[dict[str, Any]], dict[str, Any]]
 

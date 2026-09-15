@@ -7,8 +7,7 @@ from uuid import uuid4
 from app.core.config import settings
 from app.core.security import execution_auth_context
 from app.harness.events import utc_now_iso
-from app.persistence.rag_store import rag_store
-from app.persistence.sqlite_store import task_store
+from app.persistence.factory import rag_store, task_store
 from app.providers.llm_provider import llm_provider
 from app.skills.base import SkillContext
 from app.skills.builtin import builtin_plugin

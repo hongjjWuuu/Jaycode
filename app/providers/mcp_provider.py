@@ -15,7 +15,7 @@ from app.agents.project_tools import EXCLUDED_DIRS
 from app.core.config import settings
 from app.core.security import execution_auth_context
 from app.harness.events import utc_now_iso
-from app.persistence.sqlite_store import task_store
+from app.persistence.factory import task_store
 
 
 # 本地确定性适配器

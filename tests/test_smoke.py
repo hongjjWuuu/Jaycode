@@ -275,6 +275,79 @@ def test_worker_supervisor_enters_degraded_after_restart_limit() -> None:
         supervisor.stop()
 
 
+def test_sqlite_backup_creates_consistent_manifest_without_overwrite(tmp_path) -> None:
+    import json
+    import sqlite3
+
+    from app.persistence.migrate import backup_sqlite, sqlite_manifest
+
+    source = tmp_path / "source.db"
+    backup = tmp_path / "snapshot.db"
+    with sqlite3.connect(source) as conn:
+        conn.execute("CREATE TABLE sample (id TEXT PRIMARY KEY, payload TEXT NOT NULL)")
+        conn.executemany("INSERT INTO sample VALUES (?, ?)", [("a", "alpha"), ("b", "beta")])
+
+    result = backup_sqlite(backup, source)
+    assert result["integrity"] == "ok"
+    assert result["tables"] == 1
+    assert sqlite_manifest(source) == sqlite_manifest(backup)
+    saved_manifest = json.loads((tmp_path / "snapshot.db.manifest.json").read_text(encoding="utf-8"))
+    assert saved_manifest["tables"]["sample"]["row_count"] == 2
+    try:
+        backup_sqlite(backup, source)
+    except FileExistsError:
+        pass
+    else:
+        raise AssertionError("backup must refuse to overwrite an existing destination")
+
+
+def test_sqlite_export_contains_every_table_and_refuses_overwrite(tmp_path) -> None:
+    import json
+    import sqlite3
+
+    from app.persistence.migrate import export_sqlite
+
+    source = tmp_path / "all-domains.db"
+    export = tmp_path / "all-domains.json"
+    with sqlite3.connect(source) as conn:
+        conn.execute("CREATE TABLE task_data (id TEXT PRIMARY KEY, payload BLOB)")
+        conn.execute("INSERT INTO task_data VALUES (?, ?)", ("task-1", b"payload"))
+        conn.execute("CREATE TABLE memory_data (id TEXT PRIMARY KEY, content TEXT)")
+        conn.execute("INSERT INTO memory_data VALUES (?, ?)", ("memory-1", "fact"))
+
+    result = export_sqlite(export, source)
+    payload = json.loads(export.read_text(encoding="utf-8"))
+    assert result["tables"] == 2
+    assert payload["format"] == "jaycode-sqlite-export-v2"
+    assert set(payload["tables"]) == {"task_data", "memory_data"}
+    assert payload["tables"]["task_data"]["rows"][0]["payload"] == {"$bytes_base64": "cGF5bG9hZA=="}
+    try:
+        export_sqlite(export, source)
+    except FileExistsError:
+        pass
+    else:
+        raise AssertionError("export must refuse to overwrite an existing destination")
+
+
+def test_postgres_store_factory_fails_closed_instead_of_mixing_sqlite(monkeypatch) -> None:
+    from app.core.config import settings
+    from app.persistence.factory import get_persistence_stores
+
+    monkeypatch.setattr(settings, "jaycode_persistence_store", "postgres")
+    monkeypatch.setattr(settings, "database_url", "postgresql://localhost/jaycode")
+    monkeypatch.setattr(settings, "pgvector_database_url", "")
+    get_persistence_stores.cache_clear()
+    try:
+        try:
+            get_persistence_stores()
+        except RuntimeError as exc:
+            assert "Refusing mixed persistence" in str(exc)
+        else:
+            raise AssertionError("partial PostgreSQL wiring must fail closed")
+    finally:
+        get_persistence_stores.cache_clear()
+
+
 def test_llm_monitor_emits_dimensioned_metrics_and_threshold_alerts() -> None:
     from app.core.observability import metrics
 
@@ -303,13 +376,32 @@ def test_llm_monitor_emits_dimensioned_metrics_and_threshold_alerts() -> None:
 
 def test_postgres_selection_fails_closed_until_all_domains_are_wired(monkeypatch) -> None:
     monkeypatch.setattr(settings, "jaycode_persistence_store", "postgres")
-    monkeypatch.setattr(settings, "database_url", "postgresql://unused")
+    monkeypatch.setattr(settings, "database_url", "postgresql://user@127.0.0.1:5432/test")
+    monkeypatch.setattr(settings, "pgvector_database_url", "")
     try:
         validate_security_configuration()
     except RuntimeError as exc:
         assert "refusing mixed" in str(exc)
     else:
         raise AssertionError("PostgreSQL must not silently leave application domains on SQLite")
+
+
+def test_postgres_urls_must_target_the_same_database() -> None:
+    from app.persistence.postgres_config import validate_matching_postgres_targets
+
+    validate_matching_postgres_targets(
+        "postgresql://jaycode:secret@localhost:5432/jaycode",
+        "postgresql://other-user:other-secret@127.0.0.1:5432/jaycode",
+    )
+    try:
+        validate_matching_postgres_targets(
+            "postgresql://jaycode@127.0.0.1:5432/jaycode",
+            "postgresql://jaycode@127.0.0.1:5432/other",
+        )
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("different database targets must be rejected")
 
 
 def test_memory_lifecycle_is_audited(tmp_path) -> None:

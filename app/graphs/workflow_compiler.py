@@ -10,7 +10,7 @@ from app.agents.code_review_tools import review_single_file
 from app.graphs.project_analyzer_graph import project_analyzer_graph
 from app.graphs.studio_graphs import code_review_graph, learning_coach_graph, rag_process_graph
 from app.harness.events import utc_now_iso
-from app.persistence.rag_store import rag_store
+from app.persistence.factory import rag_store
 from app.providers.mcp_provider import mcp_provider
 from app.skills.executor import execute_skill
 

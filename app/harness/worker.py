@@ -15,7 +15,7 @@ from app.graphs.collaboration_runner import run_collaboration_task
 from app.graphs.workflow_compiler import resume_task_workflow, run_task_workflow
 from app.harness.context import AgentExecutionContext
 from app.harness.runtime import harness_runtime
-from app.persistence.sqlite_store import task_store
+from app.persistence.factory import task_store
 
 
 class LocalTaskWorker:

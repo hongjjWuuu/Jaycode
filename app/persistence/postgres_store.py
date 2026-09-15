@@ -76,6 +76,12 @@ class PostgresTaskStore:
             "CREATE INDEX IF NOT EXISTS idx_pg_task_queue ON agent_task(status, lease_until, created_at)",
             "CREATE INDEX IF NOT EXISTS idx_pg_event_task_created ON agent_task_event(task_id, created_at)",
             "CREATE INDEX IF NOT EXISTS idx_pg_audit_action_created ON security_audit_log(action, created_at)",
+            "CREATE INDEX IF NOT EXISTS idx_pg_audit_actor_created ON security_audit_log(actor_id, created_at)",
+            """CREATE TABLE IF NOT EXISTS agent_worker (
+                worker_id TEXT PRIMARY KEY, pid INTEGER NOT NULL, started_at TEXT NOT NULL,
+                last_heartbeat TEXT NOT NULL, status TEXT NOT NULL, active_task_id TEXT,
+                restart_count INTEGER NOT NULL DEFAULT 0
+            )""",
         )
         with self.connection() as conn, conn.cursor() as cur:
             for statement in statements:
@@ -144,15 +150,22 @@ class PostgresTaskStore:
                 created_at TIMESTAMPTZ NOT NULL DEFAULT now(), UNIQUE(package_id, version)
             )""",
             """CREATE TABLE IF NOT EXISTS memory_record (
-                memory_id TEXT PRIMARY KEY, actor_id TEXT NOT NULL, scope TEXT NOT NULL,
-                content_json JSONB NOT NULL, source_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-                confirmed_at TIMESTAMPTZ, expires_at TIMESTAMPTZ, superseded_by TEXT,
-                created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                memory_id TEXT PRIMARY KEY, actor_id TEXT, scope TEXT NOT NULL,
+                scope_id TEXT NOT NULL DEFAULT 'local-user', memory_type TEXT NOT NULL DEFAULT 'fact',
+                memory_key TEXT NOT NULL DEFAULT '', content TEXT NOT NULL DEFAULT '',
+                content_hash TEXT NOT NULL DEFAULT '', confidence DOUBLE PRECISION NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'candidate', source_type TEXT NOT NULL DEFAULT 'conversation',
+                source_ref TEXT, source_task_id TEXT, confirmed_by TEXT, superseded_by TEXT, revoked_at TEXT,
+                extraction_source TEXT NOT NULL DEFAULT 'rule_fallback', quality_score DOUBLE PRECISION NOT NULL DEFAULT 0,
+                quality_reasons JSONB NOT NULL DEFAULT '[]'::jsonb,
+                retention_policy TEXT NOT NULL DEFAULT 'review_90d', expires_at TEXT, conflict_with TEXT,
+                rag_path TEXT, confirmed_at TEXT, content_json JSONB, source_json JSONB,
+                created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT ''
             )""",
             """CREATE TABLE IF NOT EXISTS memory_lifecycle_event (
-                event_id TEXT PRIMARY KEY, memory_id TEXT NOT NULL REFERENCES memory_record(memory_id) ON DELETE CASCADE,
-                action TEXT NOT NULL, actor_id TEXT NOT NULL, metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-                created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                event_id TEXT PRIMARY KEY, memory_id TEXT NOT NULL,
+                action TEXT NOT NULL, actor_id TEXT, metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+                created_at TEXT NOT NULL
             )""",
             """CREATE TABLE IF NOT EXISTS llm_call_trace (
                 trace_id TEXT PRIMARY KEY, request_id TEXT NOT NULL, task_id TEXT,
@@ -205,6 +218,81 @@ class PostgresTaskStore:
                 "INSERT INTO security_audit_log(audit_id, request_id, actor_id, role, action, resource_type, resource_id, status, metadata_json, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (audit["audit_id"], audit.get("request_id", ""), audit.get("actor_id", "unknown"), audit.get("role", "unknown"), audit.get("action", "unknown"), audit.get("resource_type", "api"), audit.get("resource_id"), audit.get("status", "unknown"), json.dumps(audit.get("metadata", {}), ensure_ascii=False), audit.get("created_at") or utc_now_iso()),
             )
+
+    def save_security_audit(self, record: dict[str, Any]) -> dict[str, Any]:
+        audit = {
+            "audit_id": record.get("audit_id") or f"audit_{uuid4().hex}",
+            "request_id": str(record.get("request_id") or ""),
+            "actor_id": str(record.get("actor_id") or "unknown"),
+            "role": str(record.get("role") or "unknown"),
+            "action": str(record.get("action") or "unknown"),
+            "resource_type": str(record.get("resource_type") or "api"),
+            "resource_id": str(record.get("resource_id") or ""),
+            "status": str(record.get("status") or "unknown"),
+            "metadata": record.get("metadata") or {},
+            "created_at": record.get("created_at") or utc_now_iso(),
+        }
+        with self.connection() as conn:
+            conn.execute(
+                """INSERT INTO security_audit_log(
+                    audit_id,request_id,actor_id,role,action,resource_type,resource_id,status,metadata_json,created_at
+                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s)""",
+                (
+                    audit["audit_id"], audit["request_id"], audit["actor_id"], audit["role"],
+                    audit["action"], audit["resource_type"], audit["resource_id"], audit["status"],
+                    json.dumps(audit["metadata"], ensure_ascii=False), audit["created_at"],
+                ),
+            )
+        return audit
+
+    def list_security_audits(
+        self, limit: int = 100, actor_id: str | None = None, role: str | None = None,
+        action: str | None = None, status: str | None = None,
+    ) -> list[dict[str, Any]]:
+        filters = [("actor_id", actor_id), ("role", role), ("action", action), ("status", status)]
+        active = [(field, value) for field, value in filters if value]
+        where = " WHERE " + " AND ".join(f"{field}=%s" for field, _ in active) if active else ""
+        with self.connection() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM security_audit_log{where} ORDER BY created_at DESC LIMIT %s",
+                (*[value for _, value in active], max(1, min(limit, 1000))),
+            ).fetchall()
+        result = []
+        for row in rows:
+            item = dict(row)
+            item["metadata"] = item.pop("metadata_json") or {}
+            result.append(item)
+        return result
+
+    def register_worker(self, worker_id: str, pid: int) -> None:
+        now = utc_now_iso()
+        with self.connection() as conn:
+            conn.execute(
+                """INSERT INTO agent_worker(worker_id,pid,started_at,last_heartbeat,status,active_task_id)
+                   VALUES (%s,%s,%s,%s,'running',NULL)
+                   ON CONFLICT(worker_id) DO UPDATE SET pid=EXCLUDED.pid,started_at=EXCLUDED.started_at,
+                   last_heartbeat=EXCLUDED.last_heartbeat,status='running',active_task_id=NULL""",
+                (worker_id, pid, now, now),
+            )
+
+    def heartbeat_worker(self, worker_id: str, active_task_id: str | None = None) -> None:
+        with self.connection() as conn:
+            conn.execute(
+                "UPDATE agent_worker SET last_heartbeat=%s,status='running',active_task_id=%s WHERE worker_id=%s",
+                (utc_now_iso(), active_task_id, worker_id),
+            )
+
+    def unregister_worker(self, worker_id: str) -> None:
+        with self.connection() as conn:
+            conn.execute(
+                "UPDATE agent_worker SET last_heartbeat=%s,status='stopped',active_task_id=NULL WHERE worker_id=%s",
+                (utc_now_iso(), worker_id),
+            )
+
+    def list_workers(self) -> list[dict[str, Any]]:
+        with self.connection() as conn:
+            rows = conn.execute("SELECT * FROM agent_worker ORDER BY started_at").fetchall()
+        return [dict(row) for row in rows]
 
     def create_task(self, task_id: str, goal: str, project_path: str | None, status: str, context: dict[str, Any] | None = None, input_state: dict[str, Any] | None = None) -> dict[str, Any] | None:
         context = context or {}

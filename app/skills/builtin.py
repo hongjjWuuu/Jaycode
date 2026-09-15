@@ -16,7 +16,7 @@ from app.agents.project_tools import (
 )
 from app.agents.rag_tools import process_knowledge
 from app.agents.workflow_tools import run_workflow
-from app.persistence.rag_store import rag_store
+from app.persistence.factory import rag_store
 from app.providers.mcp_provider import mcp_provider
 from app.skills.base import SkillContext
 

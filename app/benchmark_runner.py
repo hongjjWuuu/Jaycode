@@ -12,8 +12,7 @@ from uuid import uuid4
 from app.graphs.collaboration_runner import run_collaboration_task
 from app.graphs.workflow_compiler import run_compiled_workflow
 from app.harness.events import utc_now_iso
-from app.persistence.rag_store import rag_store
-from app.persistence.sqlite_store import task_store
+from app.persistence.factory import rag_store, task_store
 from app.providers.llm_provider import llm_provider
 from app.providers.mcp_provider import mcp_provider
 

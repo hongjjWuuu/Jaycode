@@ -15,7 +15,8 @@ from fastapi.responses import JSONResponse
 
 from app.core.config import settings
 from app.core.observability import metrics
-from app.persistence.sqlite_store import task_store
+from app.persistence.factory import task_store
+from app.persistence.postgres_config import validate_matching_postgres_targets
 
 
 @dataclass(frozen=True)
@@ -69,6 +70,7 @@ def validate_security_configuration() -> None:
     if settings.jaycode_persistence_store.lower() == "postgres" and not settings.database_url:
         raise RuntimeError("JAYCODE_PERSISTENCE_STORE=postgres requires DATABASE_URL")
     if settings.jaycode_persistence_store.lower() == "postgres":
+        validate_matching_postgres_targets(settings.database_url, settings.pgvector_database_url)
         raise RuntimeError("PostgreSQL core adapter is not wired to every application domain; refusing mixed SQLite/PostgreSQL persistence.")
 
 

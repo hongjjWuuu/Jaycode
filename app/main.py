@@ -10,8 +10,7 @@ from app.core.llm_monitor import llm_monitor
 from app.core.observability import configure_json_logging, metrics
 from app.core.security import security_middleware, validate_security_configuration
 from app.harness.supervisor import worker_supervisor
-from app.persistence.postgres_store import PostgresTaskStore
-from app.persistence.sqlite_store import task_store
+from app.persistence.factory import get_persistence_stores, task_store
 
 # 创建 FastAPI 应用
 # 挂载 API 路由
@@ -31,12 +30,7 @@ def health() -> dict[str, str]:
 def ready() -> dict[str, object]:
     database_ready = True
     try:
-        if settings.jaycode_persistence_store.lower() == "postgres":
-            with PostgresTaskStore(settings.database_url).connection() as conn:
-                conn.execute("SELECT 1").fetchone()
-        else:
-            with task_store._connect() as conn:
-                conn.execute("SELECT 1").fetchone()
+        get_persistence_stores().ping()
     except Exception:  # noqa: BLE001 - readiness must not expose database details
         database_ready = False
     supervisor = worker_supervisor.snapshot()
@@ -67,6 +61,7 @@ app.include_router(project_router)
 
 @app.on_event("startup")
 def start_runtime_services() -> None:
+    get_persistence_stores().ping()
     if settings.jaycode_worker_supervisor_enabled:
         worker_supervisor.max_restarts = max(1, settings.jaycode_worker_supervisor_max_restarts)
         worker_supervisor.worker_count = max(1, settings.jaycode_worker_count)

@@ -500,4 +500,16 @@ def _is_due(value: str, now: datetime) -> bool:
         return False
 
 
-memory_store = SQLiteMemoryStore()
+class _LazyMemoryStore:
+    """Delay SQLite initialization until a memory operation is requested."""
+
+    def __init__(self) -> None:
+        self._store: SQLiteMemoryStore | None = None
+
+    def __getattr__(self, name: str) -> Any:
+        if self._store is None:
+            self._store = SQLiteMemoryStore()
+        return getattr(self._store, name)
+
+
+memory_store = _LazyMemoryStore()

@@ -35,9 +35,8 @@ from app.marketplace.installer import (
     preview_marketplace_package,
     uninstall_marketplace_package,
 )
-from app.persistence.memory_store import memory_store
-from app.persistence.rag_store import evaluate_gold_set, rag_store
-from app.persistence.sqlite_store import task_store
+from app.persistence.factory import memory_store, rag_store, task_store
+from app.persistence.rag_store import evaluate_gold_set
 from app.providers.llm_provider import llm_provider
 from app.providers.mcp_provider import mcp_provider
 from app.schemas.project import ProjectAnalyzeRequest, ProjectAnalyzeResponse
