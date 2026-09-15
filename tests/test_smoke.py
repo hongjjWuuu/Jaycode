@@ -109,6 +109,33 @@ def test_review_resume_is_enqueued_atomically(tmp_path) -> None:
     assert store.get_events("resume-task")[-1]["status"] == "queued"
 
 
+def test_review_transition_bundle_rolls_back_as_a_unit(tmp_path) -> None:
+    store = SQLiteTaskStore(tmp_path / "review-bundle.db")
+    store.create_task("review-bundle", "goal", ".", "waiting_review")
+    try:
+        store.apply_review_transition(
+            "review-bundle",
+            "rejected",
+            "retry",
+            "waiting_review",
+            [{"type": "human_review", "data": {"not_json": object()}}],
+            checkpoint={"paused_node_id": "review"},
+            retry=True,
+        )
+    except TypeError:
+        pass
+    else:
+        raise AssertionError("A serialization failure must abort the whole review transition")
+
+    task = store.get_task("review-bundle")
+    assert task["status"] == "waiting_review"
+    assert task["retry_count"] == 0
+    assert store.get_events("review-bundle") == []
+    assert store.get_artifacts("review-bundle") == []
+    with store._connect() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM human_review_action WHERE task_id = ?", ("review-bundle",)).fetchone()[0] == 0
+
+
 def test_workflow_cycles_and_disconnected_nodes_are_blocked() -> None:
     result = validate_workflow_definition(
         [{"id": "a", "type": "planner"}, {"id": "b", "type": "reporter"}, {"id": "orphan", "type": "reporter"}],
@@ -204,7 +231,48 @@ def test_worker_load_test_claims_each_task_once(tmp_path) -> None:
     assert result["claimed_count"] == 100
     assert result["unique_claimed_count"] == 100
     assert result["completed_count"] == 100
+    assert result["independent_processes"] is True
+    assert len(set(result["worker_pids"])) == 2
     assert result["throughput_tasks_per_second"] > 0
+
+
+def test_worker_supervisor_enters_degraded_after_restart_limit() -> None:
+    import time
+
+    from app.harness.supervisor import WorkerSupervisor
+
+    commands: list[list[str]] = []
+
+    class ExitedProcess:
+        pid = 123
+        returncode = 1
+
+        def poll(self) -> int:
+            return 1
+
+        def terminate(self) -> None:
+            return None
+
+    def spawn(command, **_kwargs):
+        commands.append(command)
+        return ExitedProcess()
+
+    supervisor = WorkerSupervisor(
+        max_restarts=2,
+        backoff_seconds=0.1,
+        command_factory=lambda slot: ["test-worker", str(slot)],
+        popen_factory=spawn,
+    )
+    supervisor.start()
+    deadline = time.monotonic() + 3
+    try:
+        while supervisor.status != "degraded" and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert supervisor.status == "degraded"
+        assert supervisor.restart_counts[0] == 2
+        assert commands == [["test-worker", "0"], ["test-worker", "0"]]
+    finally:
+        supervisor.stop()
 
 
 def test_llm_monitor_emits_dimensioned_metrics_and_threshold_alerts() -> None:

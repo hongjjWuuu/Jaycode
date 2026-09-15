@@ -4,6 +4,7 @@ import logging
 import subprocess
 import sys
 import threading
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -13,10 +14,20 @@ logger = logging.getLogger("jaycode.supervisor")
 
 
 class WorkerSupervisor:
-    def __init__(self, *, max_restarts: int = 5, backoff_seconds: float = 2.0) -> None:
+    def __init__(
+        self,
+        *,
+        max_restarts: int = 5,
+        backoff_seconds: float = 2.0,
+        worker_count: int = 1,
+        command_factory: Callable[[int], Sequence[str]] | None = None,
+        popen_factory: Callable[..., subprocess.Popen[Any]] | None = None,
+    ) -> None:
         self.max_restarts = max(1, max_restarts)
         self.backoff_seconds = max(0.1, backoff_seconds)
-        self.worker_count = 1
+        self.worker_count = max(1, worker_count)
+        self._command_factory = command_factory or self._worker_command
+        self._popen_factory = popen_factory or subprocess.Popen
         self.processes: dict[int, subprocess.Popen[Any]] = {}
         self.restart_counts: dict[int, int] = {}
         self.next_start_at: dict[int, float] = {}
@@ -78,8 +89,8 @@ class WorkerSupervisor:
                     logger.error("worker_exit", extra={"worker_id": f"supervised-{slot}", "error_code": "WORKER_EXIT", "status": str(code)})
                     self.next_start_at[slot] = now + self.backoff_seconds * min(self.restart_counts[slot], 5)
                 if slot not in self.processes and self.restart_counts.get(slot, 0) < self.max_restarts and now >= self.next_start_at.get(slot, 0):
-                    self.processes[slot] = subprocess.Popen(
-                        [sys.executable, "-m", "app.harness.worker", "--worker-id", f"supervised-{slot}"],
+                    self.processes[slot] = self._popen_factory(
+                        list(self._command_factory(slot)),
                         cwd=str(Path.cwd()), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                     )
                     metrics.inc("jaycode_workers_started_total")
@@ -89,6 +100,10 @@ class WorkerSupervisor:
             metrics.set("jaycode_workers", alive)
             metrics.set("jaycode_worker_supervisor_ready", int(alive == self.worker_count and not degraded))
             self._stop.wait(0.5)
+
+    @staticmethod
+    def _worker_command(slot: int) -> Sequence[str]:
+        return [sys.executable, "-m", "app.harness.worker", "--worker-id", f"supervised-{slot}"]
 
 
 worker_supervisor = WorkerSupervisor()

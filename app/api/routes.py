@@ -1059,19 +1059,20 @@ def apply_review_action(task_id: str, request: ReviewActionRequest) -> ReviewAct
         content = request.comment or task.get("final_report") or message
         rag_store.add_note("project-memory", f"review/{task_id}", content)
         message = "Review note saved into project-memory knowledge collection."
-    task_store.record_review_action(task_id, action, request.comment)
-    task_store.update_task(task_id, status)
-    task_store.append_event(
-        {
+    task_store.apply_review_transition(
+        task_id,
+        action,
+        request.comment,
+        status,
+        [{
             "event_id": f"evt_{uuid4().hex}",
-            "task_id": task_id,
             "type": "review_action",
             "node": "human_review",
             "agent": "human_reviewer",
             "status": status,
             "content": message,
             "data": {"action": action, "comment": request.comment, "payload": request.payload},
-        }
+        }],
     )
     return ReviewActionResponse(task_id=task_id, status=status, action=action, message=message)
 
@@ -1396,19 +1397,20 @@ def _record_human_review(task_id: str, action: str, status: str, comment: str | 
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    task_store.record_review_action(task_id, action, comment)
-    task_store.update_task(task_id, status)
-    task_store.append_event(
-        {
+    task_store.apply_review_transition(
+        task_id,
+        action,
+        comment,
+        status,
+        [{
             "event_id": f"evt_{uuid4().hex}",
-            "task_id": task_id,
             "type": "human_review",
             "node": "human_review",
             "agent": "human_reviewer",
             "status": status,
             "content": _review_content(action, comment),
             "data": {"action": action, "comment": comment},
-        }
+        }],
     )
     return HumanReviewResponse(task_id=task_id, status=status, action=action, comment=comment)
 
@@ -1470,43 +1472,33 @@ def _retry_pre_run_confirmation(
         },
         "retry_attempt": next_used,
     }
-    task_store.record_review_action(task_id, action, comment)
-    task_store.update_task(task_id, "waiting_review")
-    task_store.save_artifact(task_id, "workflow_checkpoint", "resume", next_checkpoint)
-    task_store.append_event(
-        {
-            "event_id": f"evt_{uuid4().hex}",
-            "task_id": task_id,
-            "type": "human_review",
-            "node": paused_node_id,
-            "agent": "human_reviewer",
-            "status": action,
-            "content": _review_content(action, comment),
-            "data": {
-                "action": action,
-                "comment": comment,
-                "retry_attempt": next_used,
-                "max_retries": retry_count,
+    task_store.apply_review_transition(
+        task_id,
+        action,
+        comment,
+        "waiting_review",
+        [
+            {
+                "event_id": f"evt_{uuid4().hex}",
+                "type": "human_review",
+                "node": paused_node_id,
+                "agent": "human_reviewer",
+                "status": action,
+                "content": _review_content(action, comment),
+                "data": {"action": action, "comment": comment, "retry_attempt": next_used, "max_retries": retry_count},
             },
-        }
-    )
-    task_store.append_event(
-        {
-            "event_id": f"evt_{uuid4().hex}",
-            "task_id": task_id,
-            "type": "workflow_node",
-            "node": paused_node_id,
-            "agent": str(paused_node.get("type") or "workflow"),
-            "status": "retrying",
-            "content": f"Pre-run confirmation rejected; retry {next_used}/{retry_count} is waiting for review.",
-            "data": {
-                "node_id": paused_node_id,
-                "node_type": paused_node.get("type"),
-                "node_name": paused_node.get("name") or paused_node_id,
-                "retry_attempt": next_used,
-                "max_retries": retry_count,
+            {
+                "event_id": f"evt_{uuid4().hex}",
+                "type": "workflow_node",
+                "node": paused_node_id,
+                "agent": str(paused_node.get("type") or "workflow"),
+                "status": "retrying",
+                "content": f"Pre-run confirmation rejected; retry {next_used}/{retry_count} is waiting for review.",
+                "data": {"node_id": paused_node_id, "node_type": paused_node.get("type"), "node_name": paused_node.get("name") or paused_node_id, "retry_attempt": next_used, "max_retries": retry_count},
             },
-        }
+        ],
+        checkpoint=next_checkpoint,
+        retry=True,
     )
     return True
 

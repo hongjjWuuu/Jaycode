@@ -26,9 +26,13 @@ class PostgresTaskStore:
     def connection(self) -> Iterator[Any]:
         try:
             import psycopg
+            from psycopg.rows import dict_row
         except ImportError as exc:  # pragma: no cover - dependency is optional at runtime
             raise RuntimeError("psycopg is required for PostgreSQL store") from exc
-        with psycopg.connect(self.database_url) as conn:
+        # Every adapter method consumes rows by column name. psycopg defaults
+        # to tuples, which made the first real PostgreSQL contract test fail
+        # after its INSERT succeeded.
+        with psycopg.connect(self.database_url, row_factory=dict_row, connect_timeout=10) as conn:
             yield conn
 
     def init_schema(self) -> None:
@@ -332,6 +336,101 @@ class PostgresTaskStore:
             seq = conn.execute("SELECT COALESCE(MAX(event_seq),0)+1 AS seq FROM agent_task_event WHERE task_id=%s", (task_id,)).fetchone()["seq"]
             conn.execute("INSERT INTO agent_task_event(event_id,task_id,event_type,status,content,data_json,event_seq,execution_version,created_at) VALUES (%s,%s,'task_cancelled','cancelled','Task cancellation requested.','{}'::jsonb,%s,%s,%s)", (event_id, task_id, seq, int(row["execution_version"])+1, now))
         return True
+
+    def apply_review_transition(
+        self,
+        task_id: str,
+        action: str,
+        comment: str | None,
+        status: str,
+        events: list[dict[str, Any]],
+        *,
+        checkpoint: dict[str, Any] | None = None,
+        retry: bool = False,
+        resume_input: dict[str, Any] | None = None,
+        actor_id: str = "system-agent",
+    ) -> None:
+        """Atomically save review, task state, checkpoint and event history."""
+        now = utc_now_iso()
+        transitions = {
+            "created": {"queued", "running", "cancelled", "failed"},
+            "queued": {"running", "cancelled", "failed"},
+            "running": {"completed", "waiting_review", "paused", "failed", "cancelled", "queued"},
+            "waiting_review": {"running", "queued", "completed", "cancelled", "rejected", "paused"},
+            "paused": {"queued", "running", "cancelled", "failed"},
+            "failed": {"queued", "running"},
+            "cancelled": {"queued"},
+        }
+        with self.connection() as conn:
+            row = conn.execute(
+                "SELECT status, execution_version, input_json FROM agent_task WHERE task_id=%s FOR UPDATE",
+                (task_id,),
+            ).fetchone()
+            if not row:
+                raise ValueError(f"Task `{task_id}` does not exist.")
+            current_status = str(row["status"])
+            if status != current_status and status not in transitions.get(current_status, set()):
+                raise ValueError(f"Invalid task status transition: {current_status} -> {status}")
+            version = int(row["execution_version"]) + 1
+            conn.execute(
+                "UPDATE agent_task SET status=%s, updated_at=%s, execution_version=%s, retry_count=retry_count+%s, resume_count=resume_count+%s, input_json=COALESCE(%s::jsonb,input_json), worker_id=CASE WHEN %s THEN NULL ELSE worker_id END, lease_until=CASE WHEN %s THEN NULL ELSE lease_until END, heartbeat_at=CASE WHEN %s THEN NULL ELSE heartbeat_at END WHERE task_id=%s",
+                (
+                    status, now, version, int(retry), int(resume_input is not None),
+                    json.dumps(resume_input, ensure_ascii=False) if resume_input is not None else None,
+                    resume_input is not None, resume_input is not None, resume_input is not None, task_id,
+                ),
+            )
+            conn.execute(
+                "INSERT INTO human_review_action(review_id,task_id,actor_id,action,payload_json,created_at) VALUES (%s,%s,%s,%s,%s::jsonb,%s)",
+                (
+                    f"review_{uuid4().hex}", task_id, actor_id, action,
+                    json.dumps({"comment": comment}, ensure_ascii=False), now,
+                ),
+            )
+            if checkpoint is not None:
+                conn.execute(
+                    "INSERT INTO agent_task_artifact(task_id,artifact_type,name,content_json,execution_version,created_at) VALUES (%s,'workflow_checkpoint','review',%s::jsonb,%s,%s)",
+                    (task_id, json.dumps(checkpoint, ensure_ascii=False), version, now),
+                )
+            seq = conn.execute(
+                "SELECT COALESCE(MAX(event_seq),0)+1 AS seq FROM agent_task_event WHERE task_id=%s",
+                (task_id,),
+            ).fetchone()["seq"]
+            for event in events:
+                event_id = event.get("event_id") or f"evt_{uuid4().hex}"
+                conn.execute(
+                    "INSERT INTO agent_task_event(event_id,task_id,event_type,node,agent,status,content,data_json,event_seq,execution_version,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s) ON CONFLICT(event_id) DO NOTHING",
+                    (
+                        event_id, task_id, event.get("type", "human_review"), event.get("node"),
+                        event.get("agent", "human_reviewer"), event.get("status", status),
+                        event.get("content"), json.dumps(event.get("data", {}), ensure_ascii=False),
+                        seq, version, event.get("timestamp") or now,
+                    ),
+                )
+                seq += 1
+
+    def queue_task_resume(
+        self, task_id: str, checkpoint: dict[str, Any], action: str, comment: str | None,
+    ) -> None:
+        task = self.get_task(task_id)
+        if not task:
+            raise ValueError(f"Task `{task_id}` does not exist.")
+        if task["status"] != "waiting_review":
+            raise ValueError(f"Task `{task_id}` is not waiting for review.")
+        task_input = self.get_task_input(task_id)
+        task_input["_jaycode_runner"] = "resume"
+        task_input["_resume_payload"] = {"checkpoint": checkpoint, "action": action, "comment": comment}
+        self.apply_review_transition(
+            task_id, action, comment, "queued",
+            [{
+                "event_id": f"evt_{uuid4().hex}", "type": "human_review",
+                "node": str(checkpoint.get("paused_node_id") or "human_review"),
+                "status": "queued", "content": f"Review action {action} queued for resume.",
+                "data": {"action": action, "resume": True},
+            }],
+            checkpoint=checkpoint,
+            resume_input=task_input,
+        )
 
     def recover_expired_task_ids(self) -> list[str]:
         from datetime import UTC, datetime

@@ -651,34 +651,90 @@ class SQLiteTaskStore:
         self, task_id: str, checkpoint: dict[str, Any], action: str, comment: str | None,
     ) -> None:
         """Atomically record reviewer action and enqueue checkpoint continuation."""
+        row = self.get_task(task_id)
+        if not row:
+            raise ValueError(f"Task `{task_id}` does not exist.")
+        if row["status"] != "waiting_review":
+            raise ValueError(f"Task `{task_id}` is not waiting for review.")
+        task_input = self.get_task_input(task_id)
+        task_input["_jaycode_runner"] = "resume"
+        task_input["_resume_payload"] = {"checkpoint": checkpoint, "action": action, "comment": comment}
+        self.apply_review_transition(
+            task_id,
+            action,
+            comment,
+            "queued",
+            [{
+                "event_id": f"evt_{uuid4().hex}",
+                "type": "human_review",
+                "node": str(checkpoint.get("paused_node_id") or "human_review"),
+                "status": "queued",
+                "content": f"Review action {action} queued for resume.",
+                "data": {"action": action, "resume": True},
+            }],
+            checkpoint=checkpoint,
+            resume_input=task_input,
+        )
+
+    def apply_review_transition(
+        self,
+        task_id: str,
+        action: str,
+        comment: str | None,
+        status: str,
+        events: list[dict[str, Any]],
+        *,
+        checkpoint: dict[str, Any] | None = None,
+        retry: bool = False,
+        resume_input: dict[str, Any] | None = None,
+    ) -> None:
+        """Atomically persist a review decision and its task/checkpoint effects."""
         now = utc_now_iso()
-        event_id = f"evt_{uuid4().hex}"
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
-            row = conn.execute("SELECT status, input_json, execution_version FROM agent_task WHERE task_id = ?", (task_id,)).fetchone()
+            row = conn.execute(
+                "SELECT status, execution_version FROM agent_task WHERE task_id = ?",
+                (task_id,),
+            ).fetchone()
             if not row:
                 raise ValueError(f"Task `{task_id}` does not exist.")
-            if row["status"] != "waiting_review":
-                raise ValueError(f"Task `{task_id}` is not waiting for review.")
-            try:
-                task_input = json.loads(row["input_json"] or "{}")
-            except (TypeError, ValueError):
-                task_input = {}
-            task_input["_jaycode_runner"] = "resume"
-            task_input["_resume_payload"] = {"checkpoint": checkpoint, "action": action, "comment": comment}
+            current_status = str(row["status"])
+            if status != current_status and status not in TASK_TRANSITIONS.get(current_status, set()):
+                raise ValueError(f"Invalid task status transition: {current_status} -> {status}")
+
+            version = int(row["execution_version"]) + 1
             conn.execute(
-                "UPDATE agent_task SET status = 'queued', input_json = ?, updated_at = ?, resume_count = resume_count + 1, execution_version = execution_version + 1, worker_id = NULL, lease_until = NULL, heartbeat_at = NULL WHERE task_id = ?",
-                (json.dumps(task_input, ensure_ascii=False), now, task_id),
+                "UPDATE agent_task SET status = ?, updated_at = ?, execution_version = ?, retry_count = retry_count + ?, resume_count = resume_count + ?, input_json = COALESCE(?, input_json), worker_id = CASE WHEN ? = 1 THEN NULL ELSE worker_id END, lease_until = CASE WHEN ? = 1 THEN NULL ELSE lease_until END, heartbeat_at = CASE WHEN ? = 1 THEN NULL ELSE heartbeat_at END WHERE task_id = ?",
+                (status, now, version, int(retry), int(resume_input is not None), json.dumps(resume_input, ensure_ascii=False) if resume_input is not None else None, int(resume_input is not None), int(resume_input is not None), int(resume_input is not None), task_id),
             )
             conn.execute(
                 "INSERT INTO human_review_action(task_id, action, comment, created_at) VALUES (?, ?, ?, ?)",
                 (task_id, action, comment, now),
             )
-            sequence = conn.execute("SELECT COALESCE(MAX(event_seq), 0) + 1 FROM agent_task_event WHERE task_id = ?", (task_id,)).fetchone()[0]
-            conn.execute(
-                "INSERT INTO agent_task_event(event_id, task_id, event_type, node, agent, status, content, data_json, created_at, event_seq, execution_version) VALUES (?, ?, 'human_review', ?, 'human_reviewer', 'queued', ?, ?, ?, ?, ?)",
-                (event_id, task_id, str(checkpoint.get("paused_node_id") or "human_review"), f"Review action {action} queued for resume.", json.dumps({"action": action, "resume": True}, ensure_ascii=False), now, sequence, int(row["execution_version"]) + 1),
-            )
+            if checkpoint is not None:
+                conn.execute(
+                    "INSERT INTO agent_task_artifact(task_id, artifact_type, name, content_json, created_at, execution_version) VALUES (?, 'workflow_checkpoint', 'review', ?, ?, ?)",
+                    (task_id, json.dumps(checkpoint, ensure_ascii=False), now, version),
+                )
+
+            next_seq = int(conn.execute(
+                "SELECT COALESCE(MAX(event_seq), 0) + 1 FROM agent_task_event WHERE task_id = ?",
+                (task_id,),
+            ).fetchone()[0])
+            for event in events:
+                event_id = str(event.get("event_id") or f"evt_{uuid4().hex}")
+                if conn.execute("SELECT 1 FROM agent_task_event WHERE event_id = ?", (event_id,)).fetchone():
+                    continue
+                conn.execute(
+                    "INSERT INTO agent_task_event(event_id, task_id, event_type, node, agent, status, content, data_json, created_at, event_seq, execution_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        event_id, task_id, event.get("type", "human_review"), event.get("node"),
+                        event.get("agent", "human_reviewer"), event.get("status", status),
+                        event.get("content"), json.dumps(event.get("data", {}), ensure_ascii=False),
+                        event.get("timestamp") or now, next_seq, version,
+                    ),
+                )
+                next_seq += 1
 
     def list_tasks(self, limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
         with self._connect() as conn:
