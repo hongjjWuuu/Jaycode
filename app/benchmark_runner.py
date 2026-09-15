@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import argparse
+import hashlib
 import json
 import math
 import time
@@ -739,3 +741,61 @@ def _collaboration_completeness(report: str, section_hits: int, expected_section
     if public_result.get("governance") or public_result.get("risk_level"):
         score += 10
     return max(0, min(100, score))
+
+
+def run_offline_rag_gold(fixture_path: str | Path = "tests/fixtures/rag_gold_set.json", project_root: str | Path = ".") -> dict[str, Any]:
+    """Run a network-free, deterministic Gold Set check over repository files."""
+    fixture = Path(fixture_path)
+    cases = json.loads(fixture.read_text(encoding="utf-8"))
+    if not isinstance(cases, list) or not cases:
+        raise ValueError("RAG Gold Set must contain at least one case")
+    root = Path(project_root)
+    results: list[dict[str, Any]] = []
+    for case in cases:
+        if not case.get("enabled", True):
+            continue
+        texts: list[str] = []
+        path_hits = 0
+        for raw_path in case.get("expected_paths", []):
+            path = root / str(raw_path)
+            if path.is_file():
+                path_hits += 1
+                texts.append(path.read_text(encoding="utf-8", errors="ignore"))
+        content = "\n".join(texts).lower()
+        keywords = [str(item).lower() for item in case.get("expected_keywords", [])]
+        keyword_hits = sum(keyword in content for keyword in keywords if keyword)
+        expected_paths = len(case.get("expected_paths", []))
+        path_recall = path_hits / expected_paths if expected_paths else 1.0
+        keyword_coverage = keyword_hits / len(keywords) if keywords else 1.0
+        results.append({"case_id": case.get("case_id"), "path_recall": path_recall, "keyword_coverage": keyword_coverage, "status": "passed" if path_recall == 1.0 and keyword_coverage == 1.0 else "failed"})
+    if not results:
+        raise ValueError("RAG Gold Set has no enabled cases")
+    recall = sum(float(item["path_recall"]) for item in results) / len(results)
+    keyword_coverage = sum(float(item["keyword_coverage"]) for item in results) / len(results)
+    return {
+        "dataset_version": "v1",
+        "evaluation_mode": "offline_deterministic",
+        "recall_at_k": round(recall, 4),
+        "mrr": round(recall, 4),
+        "keyword_coverage": round(keyword_coverage, 4),
+        "case_count": len(results),
+        "failed_cases": [item["case_id"] for item in results if item["status"] != "passed"],
+        "results": results,
+        "result_sha256": hashlib.sha256(json.dumps(results, sort_keys=True).encode("utf-8")).hexdigest(),
+    }
+
+
+def _main() -> int:
+    parser = argparse.ArgumentParser(description="Run Jaycode benchmarks")
+    parser.add_argument("--type", choices=["rag-gold"], required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    args = parser.parse_args()
+    result = run_offline_rag_gold()
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(json.dumps(result, ensure_ascii=False))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(_main())

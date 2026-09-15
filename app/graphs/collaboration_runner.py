@@ -133,6 +133,8 @@ def _collaboration_governance(result: dict[str, Any]) -> dict[str, Any]:
     score = code_review.get("score")
     if isinstance(score, int) and score < 70 and risk_level == "low":
         risk_level = "high"
+    if risk_level in {"high", "critical"} and _contains_fallback(result):
+        review_required = True
     next_actions = _collect_next_actions(records, _collaboration_suggestions(result))
     return {
         "risk_level": risk_level,
@@ -155,6 +157,16 @@ def _highest_risk(values: list[Any]) -> str:
         if order.get(key, 0) > order[level]:
             level = key
     return level
+
+
+def _contains_fallback(value: Any) -> bool:
+    if isinstance(value, dict):
+        if value.get("fallback_used") is True or value.get("answer_source") in {"fallback", "rule"}:
+            return True
+        return any(_contains_fallback(item) for item in value.values())
+    if isinstance(value, list):
+        return any(_contains_fallback(item) for item in value)
+    return False
 
 
 def _collect_next_actions(records: list[dict[str, Any]], suggestions: list[str]) -> list[str]:

@@ -8,6 +8,14 @@ class Settings(BaseSettings):
     max_scan_files: int = 800
     max_file_preview_chars: int = 4000
     jaycode_task_max_runtime_seconds: int = Field(default=900, validation_alias="JAYCODE_TASK_MAX_RUNTIME_SECONDS")
+    jaycode_worker_supervisor_enabled: bool = Field(default=False, validation_alias="JAYCODE_WORKER_SUPERVISOR_ENABLED")
+    jaycode_worker_supervisor_max_restarts: int = Field(default=5, validation_alias="JAYCODE_WORKER_SUPERVISOR_MAX_RESTARTS")
+    jaycode_worker_count: int = Field(default=1, ge=1, le=16, validation_alias="JAYCODE_WORKER_COUNT")
+    jaycode_llm_fallback_rate_threshold: float = Field(default=0.2, ge=0, le=1, validation_alias="JAYCODE_LLM_FALLBACK_RATE_THRESHOLD")
+    jaycode_llm_schema_failure_rate_threshold: float = Field(default=0.05, ge=0, le=1, validation_alias="JAYCODE_LLM_SCHEMA_FAILURE_RATE_THRESHOLD")
+    jaycode_llm_p95_latency_threshold_ms: int = Field(default=30000, ge=1, validation_alias="JAYCODE_LLM_P95_LATENCY_THRESHOLD_MS")
+    jaycode_llm_alert_min_samples: int = Field(default=20, ge=1, validation_alias="JAYCODE_LLM_ALERT_MIN_SAMPLES")
+    jaycode_persistence_store: str = Field(default="sqlite", validation_alias="JAYCODE_PERSISTENCE_STORE")
     jaycode_auth_enabled: bool = Field(default=True, validation_alias="JAYCODE_AUTH_ENABLED")
     jaycode_api_keys: str = Field(default="", validation_alias="JAYCODE_API_KEYS")
     jaycode_marketplace_remote_enabled: bool = Field(default=False, validation_alias="JAYCODE_MARKETPLACE_REMOTE_ENABLED")

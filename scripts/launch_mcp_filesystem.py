@@ -5,7 +5,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 PACKAGE_ENTRY = Path("node_modules/@modelcontextprotocol/server-filesystem/dist/index.js")
 
 

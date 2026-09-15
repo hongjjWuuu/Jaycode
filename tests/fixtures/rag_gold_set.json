@@ -1,0 +1,18 @@
+[
+  {
+    "case_id": "workflow-validation",
+    "collection": "project-memory",
+    "question": "How does Jaycode validate workflows before execution?",
+    "expected_chunk_ids": [],
+    "expected_paths": ["app/graphs/workflow_compiler.py"],
+    "expected_keywords": ["workflow", "validation"]
+  },
+  {
+    "case_id": "task-runtime",
+    "collection": "project-memory",
+    "question": "How are Jaycode tasks persisted and monitored?",
+    "expected_chunk_ids": [],
+    "expected_paths": ["app/harness/runtime.py", "app/persistence/sqlite_store.py"],
+    "expected_keywords": ["task", "event"]
+  }
+]

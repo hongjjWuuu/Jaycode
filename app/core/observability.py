@@ -1,0 +1,71 @@
+from __future__ import annotations
+
+import json
+import logging
+import threading
+import time
+from collections import defaultdict
+from typing import Any
+
+
+class MetricsRegistry:
+    """Small dependency-free Prometheus registry for local and production use."""
+
+    def __init__(self) -> None:
+        self._values: defaultdict[tuple[str, tuple[tuple[str, str], ...]], float] = defaultdict(float)
+        self._lock = threading.Lock()
+
+    def inc(self, name: str, value: float = 1, labels: dict[str, str] | None = None) -> None:
+        key = (name, tuple(sorted((labels or {}).items())))
+        with self._lock:
+            self._values[key] += value
+
+    def set(self, name: str, value: float, labels: dict[str, str] | None = None) -> None:
+        key = (name, tuple(sorted((labels or {}).items())))
+        with self._lock:
+            self._values[key] = value
+
+    def replace_series(self, name: str, series: dict[tuple[tuple[str, str], ...], float]) -> None:
+        with self._lock:
+            for key in [key for key in self._values if key[0] == name]:
+                del self._values[key]
+            for labels, value in series.items():
+                self._values[(name, labels)] = value
+
+    def observe(self, name: str, started: float, labels: dict[str, str] | None = None) -> None:
+        self.inc(f"{name}_seconds_sum", time.perf_counter() - started, labels)
+        self.inc(f"{name}_seconds_count", 1, labels)
+
+    def render(self) -> str:
+        with self._lock:
+            values = list(self._values.items())
+        lines = ["# HELP jaycode_info Jaycode runtime information", "# TYPE jaycode_info gauge", 'jaycode_info{service="jaycode"} 1']
+        for (name, labels), value in sorted(values):
+            label_text = "".join(f'{key}="{str(value).replace(chr(92), chr(92) * 2).replace(chr(34), chr(92) + chr(34))}"' for key, value in labels)
+            lines.append(f"{name}{{{label_text}}} {value}" if label_text else f"{name} {value}")
+        return "\n".join(lines) + "\n"
+
+
+metrics = MetricsRegistry()
+
+
+class JsonFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        payload: dict[str, Any] = {
+            "timestamp": self.formatTime(record, "%Y-%m-%dT%H:%M:%S%z"),
+            "level": record.levelname,
+            "event": record.getMessage(),
+        }
+        for key in ("request_id", "task_id", "worker_id", "actor_id", "role", "status", "latency_ms", "error_code"):
+            if hasattr(record, key):
+                payload[key] = getattr(record, key)
+        return json.dumps(payload, ensure_ascii=False)
+
+
+def configure_json_logging() -> None:
+    handler = logging.StreamHandler()
+    handler.setFormatter(JsonFormatter())
+    root = logging.getLogger("jaycode")
+    if not root.handlers:
+        root.addHandler(handler)
+    root.setLevel(logging.INFO)

@@ -58,6 +58,37 @@ class WorkflowState(TypedDict, total=False):
 
 SUPPORTED_NODE_TYPES = {"planner", "agent", "rag", "mcp_tool", "skill", "supervisor", "human_review", "reporter"}
 SUPPORTED_EDGE_CONDITIONS = {"always", "on_status", "contains", "truthy_output"}
+NODE_CONTRACTS: dict[str, dict[str, set[str]]] = {
+    "planner": {"inputs": {"goal", "input_text"}, "outputs": {"steps", "plan", "text"}},
+    "agent": {"inputs": {"goal", "input_text", "project_path"}, "outputs": {"text", "report_markdown", "findings"}},
+    "rag": {"inputs": {"input_text", "question", "collection"}, "outputs": {"text", "results", "answer"}},
+    "mcp_tool": {"inputs": {"input_text", "arguments"}, "outputs": {"text", "output", "status"}},
+    "skill": {"inputs": {"input_text", "skill_input"}, "outputs": {"text", "output", "status"}},
+    "supervisor": {"inputs": {"goal", "input_text"}, "outputs": {"text", "risk_level", "review_required"}},
+    "human_review": {"inputs": {"input_text", "human_approvals"}, "outputs": {"status", "question", "output"}},
+    "reporter": {"inputs": {"goal", "input_text", "outputs"}, "outputs": {"final_report", "text"}},
+}
+WORKFLOW_SCHEMA_VERSION = 1
+NODE_INPUT_TYPES: dict[str, dict[str, str]] = {
+    "planner": {"goal": "string", "input_text": "string", "project_path": "string"},
+    "agent": {"goal": "string", "input_text": "string", "project_path": "string", "findings": "array"},
+    "rag": {"input_text": "string", "question": "string", "collection": "string", "results": "array"},
+    "mcp_tool": {"input_text": "string", "arguments": "object"},
+    "skill": {"input_text": "string", "skill_input": "object"},
+    "supervisor": {"goal": "string", "input_text": "string", "findings": "array"},
+    "human_review": {"input_text": "string", "human_approvals": "object"},
+    "reporter": {"goal": "string", "input_text": "string", "outputs": "object", "findings": "array"},
+}
+NODE_OUTPUT_TYPES: dict[str, dict[str, str]] = {
+    "planner": {"steps": "array", "plan": "object", "text": "string"},
+    "agent": {"text": "string", "report_markdown": "string", "findings": "array"},
+    "rag": {"text": "string", "results": "array", "answer": "string"},
+    "mcp_tool": {"text": "string", "output": "any", "status": "string"},
+    "skill": {"text": "string", "output": "any", "status": "string"},
+    "supervisor": {"text": "string", "risk_level": "string", "review_required": "boolean"},
+    "human_review": {"status": "string", "question": "string", "output": "object"},
+    "reporter": {"final_report": "string", "text": "string"},
+}
 
 
 # 输入：节点列表、边列表、入口节点 ID
@@ -281,13 +312,18 @@ def resume_task_workflow(checkpoint: dict[str, Any], action: str = "approved", c
 
 
 def _normalize_nodes(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return nodes or [
+    normalized = [
         # 如果用户什么都没给，给一个默认的 4 节点流程
         {"id": "plan", "type": "planner", "name": "Task Planner", "config": {}},
         {"id": "analyze", "type": "agent", "name": "Project Agent", "config": {"agent_type": "project_analyzer"}},
         {"id": "review", "type": "human_review", "name": "Human Review", "config": {}},
         {"id": "report", "type": "reporter", "name": "Reporter", "config": {}},
-    ]
+    ] if not nodes else [{**node, "config": dict(node.get("config") or {})} for node in nodes]
+    for node in normalized:
+        config = node["config"]
+        if "input_mappings" not in config and isinstance(config.get("input_mapping"), dict):
+            config["input_mappings"] = config.pop("input_mapping")
+    return normalized
 
 
 def _normalize_edges(nodes: list[dict[str, Any]], edges: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -393,6 +429,15 @@ def validate_workflow_definition(nodes: list[dict[str, Any]], edges: list[dict[s
         output_schema = config.get("output_schema")
         if output_schema is not None and not isinstance(output_schema, dict):
             errors.append(f"Node `{node.get('id')}` output_schema must be an object.")
+        input_schema = config.get("input_schema")
+        if input_schema is not None and not isinstance(input_schema, dict):
+            errors.append(f"Node `{node.get('id')}` input_schema must be an object.")
+        if isinstance(input_schema, dict):
+            errors.extend(_validate_contract_schema(node, input_schema, "input_schema"))
+        if isinstance(output_schema, dict):
+            errors.extend(_validate_contract_schema(node, output_schema, "output_schema"))
+
+    _validate_cross_node_mappings(normalized_nodes, normalized_edges, errors, warnings)
 
     seen_edges: set[tuple[str, str, str]] = set()
     for edge in normalized_edges:
@@ -435,12 +480,130 @@ def validate_workflow_definition(nodes: list[dict[str, Any]], edges: list[dict[s
 
     return {
         "valid": not errors,
+        "schema_version": WORKFLOW_SCHEMA_VERSION,
         "errors": errors,
         "warnings": warnings,
         "node_count": len(normalized_nodes),
         "edge_count": len(normalized_edges),
         "parallel_sources": parallel_sources,
     }
+
+
+def _validate_cross_node_mappings(
+    nodes: list[dict[str, Any]], edges: list[dict[str, Any]], errors: list[str], warnings: list[str],
+) -> None:
+    by_id = {str(node.get("id")): node for node in nodes}
+    output_owner: dict[str, dict[str, Any]] = {}
+    for node in nodes:
+        config = node.get("config") if isinstance(node.get("config"), dict) else {}
+        output_owner[str(node["id"])] = node
+        output_owner[str(config.get("output_key") or node["id"])] = node
+
+    def source_type(source: str, path: str = "") -> str | None:
+        token = source.strip()
+        if token in {"current", "$current", "goal", "$goal", "input", "$input", "input_text", "$input_text"}:
+            return "string"
+        if token.startswith("outputs."):
+            token = token.removeprefix("outputs.")
+        parts = [part for part in token.split(".") if part]
+        if not parts:
+            return None
+        owner = output_owner.get(parts[0])
+        field = path.split(".", 1)[0] if path else (parts[1] if len(parts) > 1 else "")
+        if not owner:
+            return None
+        config = owner.get("config") if isinstance(owner.get("config"), dict) else {}
+        schema = config.get("output_schema") if isinstance(config.get("output_schema"), dict) else {}
+        schema = schema or NODE_OUTPUT_TYPES.get(str(owner.get("type")), {})
+        return schema.get(field) if field else "object"
+
+    def check_mapping(node: dict[str, Any], target: str, source: str, path: str = "") -> None:
+        node_type = str(node.get("type"))
+        config = node.get("config") if isinstance(node.get("config"), dict) else {}
+        input_schema = config.get("input_schema") if isinstance(config.get("input_schema"), dict) else {}
+        target_type = input_schema.get(target) or NODE_INPUT_TYPES.get(node_type, {}).get(target)
+        if target_type is None:
+            errors.append(f"Node `{node.get('id')}` maps to unknown input field `{target}`.")
+            return
+        resolved = source_type(source, path)
+        if resolved is None:
+            errors.append(f"Node `{node.get('id')}` mapping source `{source}` does not resolve to a declared output.")
+            return
+        if resolved == "any" or target_type == "any":
+            warnings.append(f"Node `{node.get('id')}` mapping `{source}` to `{target}` has an unknown runtime type.")
+            return
+        if resolved == "integer" and target_type == "number":
+            return
+        if resolved != target_type:
+            errors.append(f"Node `{node.get('id')}` maps `{source}` ({resolved}) to `{target}` ({target_type}).")
+
+    for node in nodes:
+        config = node.get("config") if isinstance(node.get("config"), dict) else {}
+        mappings = config.get("input_mappings")
+        if isinstance(mappings, dict):
+            for target, spec in mappings.items():
+                if isinstance(spec, str):
+                    check_mapping(node, str(target), spec)
+                elif isinstance(spec, dict):
+                    check_mapping(node, str(target), str(spec.get("source") or ""), str(spec.get("path") or ""))
+                else:
+                    errors.append(f"Node `{node.get('id')}` mapping for `{target}` must be a string or object.")
+        input_from = config.get("input_from")
+        if input_from:
+            check_mapping(node, "input_text", str(input_from), str(config.get("input_path") or ""))
+        if str(config.get("risk_level") or "").lower() in {"high", "critical"}:
+            approval_nodes = [item for item in nodes if item.get("type") == "human_review"]
+            protected = any(str(node.get("id")) in _reachable_nodes(str(review.get("id")), edges) for review in approval_nodes)
+            if not protected:
+                errors.append(f"High-risk node `{node.get('id')}` must be downstream of a human_review node.")
+
+    for edge in edges:
+        source_node = by_id.get(str(edge.get("source") or ""))
+        if not source_node:
+            continue
+        source_path = str(edge.get("source_path") or "")
+        condition = str(edge.get("condition") or "always")
+        if not source_path:
+            if condition in {"on_status", "contains"}:
+                warnings.append(f"Conditional edge `{edge.get('source')}->{edge.get('target')}` has no source_path; runtime default will be used.")
+            continue
+        resolved = source_type(str(source_node.get("id")), source_path)
+        if resolved is None:
+            errors.append(f"Edge `{edge.get('source')}->{edge.get('target')}` references unknown output `{source_path}`.")
+        elif condition == "on_status" and resolved != "string":
+            errors.append(f"Edge `{edge.get('source')}->{edge.get('target')}` on_status source must be string, got {resolved}.")
+        elif condition == "contains" and resolved not in {"string", "any"}:
+            errors.append(f"Edge `{edge.get('source')}->{edge.get('target')}` contains source must be string, got {resolved}.")
+
+
+def _validate_contract_schema(node: dict[str, Any], schema: dict[str, Any], field_name: str) -> list[str]:
+    """Validate the portable field:type contract declared by a Workflow node."""
+    allowed_types = {"string", "number", "integer", "boolean", "object", "array", "any"}
+    errors: list[str] = []
+    for field, field_type in schema.items():
+        if not isinstance(field, str) or not field.strip():
+            errors.append(f"Node `{node.get('id')}` {field_name} contains an empty field name.")
+        if not isinstance(field_type, str) or field_type not in allowed_types:
+            errors.append(f"Node `{node.get('id')}` {field_name}.{field} has unsupported type `{field_type}`.")
+    return errors
+
+
+def _validate_output_contract(output: Any, schema: dict[str, Any]) -> None:
+    if not isinstance(output, dict):
+        raise TypeError("Workflow node output must be an object when output_schema is declared")
+    for field, expected in schema.items():
+        if field not in output:
+            raise ValueError(f"Workflow node output is missing required field `{field}`")
+        value = output[field]
+        if expected == "any":
+            continue
+        checks = {
+            "string": isinstance(value, str), "number": isinstance(value, (int, float)) and not isinstance(value, bool),
+            "integer": isinstance(value, int) and not isinstance(value, bool), "boolean": isinstance(value, bool),
+            "object": isinstance(value, dict), "array": isinstance(value, list),
+        }
+        if not checks.get(expected, False):
+            raise TypeError(f"Workflow node output `{field}` must be {expected}")
 
 # 节点包装器
 # 1. 检查是否需要确认
@@ -476,6 +639,9 @@ def _node_runner(node: dict[str, Any], nodes: list[dict[str, Any]], edges: list[
                     node_state = _state_with_mapped_input(state, node, outputs)
                     # 4. 真正执行
                     output, extra = _execute_node(node, node_state, outputs)
+                    declared_output_schema = config.get("output_schema")
+                    if isinstance(declared_output_schema, dict):
+                        _validate_output_contract(output, declared_output_schema)
                     break
                 except Exception as exc:
                     if attempt >= attempts:
@@ -1051,6 +1217,8 @@ def _governance_summary(result: dict[str, Any]) -> dict[str, Any]:
     risk_level = _highest_risk([record.get("risk_level") for record in records])
     if risk_level == "low" and _report_mentions_risk(outputs):
         risk_level = "medium"
+    if risk_level in {"high", "critical"} and _contains_fallback(outputs):
+        review_required = True
     next_actions = _collect_next_actions(records, suggestions)
     return {
         "risk_level": risk_level,
@@ -1081,6 +1249,16 @@ def _highest_risk(values: list[Any]) -> str:
         if order.get(key, 0) > order[level]:
             level = key
     return level
+
+
+def _contains_fallback(value: Any) -> bool:
+    if isinstance(value, dict):
+        if value.get("fallback_used") is True or value.get("answer_source") in {"fallback", "rule"}:
+            return True
+        return any(_contains_fallback(item) for item in value.values())
+    if isinstance(value, list):
+        return any(_contains_fallback(item) for item in value)
+    return False
 
 
 def _collect_next_actions(records: list[dict[str, Any]], suggestions: list[str]) -> list[str]:

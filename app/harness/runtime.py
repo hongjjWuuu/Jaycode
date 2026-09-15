@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import multiprocessing
+import os
 import threading
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -18,6 +20,7 @@ class HarnessRuntime:
     def __init__(self) -> None:
         self.executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="jaycode-worker")
         self.futures: dict[str, Future[dict[str, Any]]] = {}
+        self.processes: dict[str, multiprocessing.Process] = {}
     
     # 创建任务
     def create_context(
@@ -25,20 +28,26 @@ class HarnessRuntime:
         goal: str,
         project_path: str | None = None,
         variables: dict[str, Any] | None = None,
+        input_state: dict[str, Any] | None = None,
     ) -> AgentExecutionContext:
         context = AgentExecutionContext(goal=goal, project_path=project_path, variables=variables or {})# 创建上下文
         auth_context = execution_auth_context()
         context.variables.setdefault("request_id", auth_context.request_id)
         context.variables.setdefault("actor_id", auth_context.actor_id)
         context.variables.setdefault("role", auth_context.role)
-        task_store.create_task(context.task_id, goal, project_path, "created", {
+        existing = task_store.create_task(context.task_id, goal, project_path, "queued", {
             "request_id": auth_context.request_id,
             "actor_id": auth_context.actor_id,
             "role": auth_context.role,
             "idempotency_key": context.variables.get("idempotency_key"),
-        })# 任务信息落库
-        event = context.events.emit(context.task_id, "task", "任务已创建", status="created") # 记录事件
-        task_store.append_event(event.to_dict())# 事件落库
+        }, input_state=input_state)# 任务信息落库
+        if existing:
+            context.task_id = str(existing["task_id"])
+            context.status = str(existing.get("status") or "queued")
+        else:
+            context.status = "queued"
+            event = context.events.emit(context.task_id, "task", "任务已加入队列", status="queued")
+            task_store.append_event(event.to_dict())
         return context
 
     def run_graph_async(self, context: AgentExecutionContext, graph_runner: GraphRunner, input_state: dict[str, Any]) -> Future[dict[str, Any]]:
@@ -53,11 +62,28 @@ class HarnessRuntime:
         future.add_done_callback(lambda _future: timer.cancel())
         return future
 
+    def run_graph_process(self, context: AgentExecutionContext, graph_runner: GraphRunner) -> multiprocessing.Process:
+        """Run a persisted task in an isolated local process."""
+        process = multiprocessing.get_context("spawn").Process(
+            target=_process_entry,
+            args=(context.task_id, graph_runner),
+            name=f"jaycode-task-{context.task_id[-8:]}",
+            daemon=True,
+        )
+        self.processes[context.task_id] = process
+        process.start()
+        return process
+
     def cancel_task(self, task_id: str) -> bool:
         future = self.futures.get(task_id)
         cancelled = bool(future and future.cancel())
-        task_store.update_task(task_id, "cancelled")
-        return cancelled or task_store.is_task_cancelled(task_id)
+        process = self.processes.get(task_id)
+        if process and process.is_alive():
+            process.terminate()
+            process.join(timeout=1)
+            cancelled = True
+        persisted = task_store.cancel_task(task_id)
+        return cancelled or persisted or task_store.is_task_cancelled(task_id)
 
     # 运行并治理
     def run_graph(self, context: AgentExecutionContext, graph_runner: GraphRunner, input_state: dict[str, Any]) -> dict[str, Any]:
@@ -90,9 +116,6 @@ class HarnessRuntime:
 
             # 6. 合并事件
             graph_events = result.get("events", [])
-            for graph_event in graph_events:
-                if graph_event.get("task_id"):
-                    task_store.append_event(graph_event)
 
              # 7. 判断最终状态
             final_message = "等待人工审核" if context.status == "waiting_review" else "任务执行完成"
@@ -110,13 +133,45 @@ class HarnessRuntime:
             # 8. 异常处理
 
             context.status = "failed"
-            task_store.update_task(context.task_id, "failed")
             event = context.events.emit(context.task_id, "error", str(exc), status="failed")
-            task_store.append_event(event.to_dict())
+            task_store.save_task_bundle(
+                context.task_id,
+                "failed",
+                None,
+                [("error", "failure", {"error_code": "TASK_EXECUTION_FAILED", "message": str(exc)})],
+                [event.to_dict()],
+                error_code="TASK_EXECUTION_FAILED",
+                error_message=str(exc),
+            )
             raise
 
 
 harness_runtime = HarnessRuntime()
+
+
+def _process_entry(task_id: str, graph_runner: GraphRunner) -> None:
+    worker_id = f"pid-{os.getpid()}"
+    record = task_store.claim_task(task_id, worker_id)
+    if not record:
+        return
+    variables = task_store.get_task_input(task_id)
+    variables.update({
+        "request_id": record.get("request_id"),
+        "actor_id": record.get("actor_id") or "system-agent",
+        "role": record.get("role") or "system-agent",
+    })
+    context = AgentExecutionContext(
+        goal=str(record.get("goal") or ""),
+        project_path=record.get("project_path"),
+        task_id=task_id,
+        variables=variables,
+    )
+    try:
+        harness_runtime.run_graph(context, graph_runner, variables)
+    except Exception:  # noqa: BLE001 - worker boundary must persist failure and exit quietly
+        # run_graph persists the failed state and event; the worker must exit
+        # without leaking a traceback to the parent API process.
+        return
 
 
 def _extract_final_report(result: dict[str, Any]) -> str | None:

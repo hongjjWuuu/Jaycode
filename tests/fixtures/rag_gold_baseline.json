@@ -1,0 +1,7 @@
+{
+  "dataset_version": "v1",
+  "recall_at_k": 1.0,
+  "mrr": 1.0,
+  "keyword_coverage": 1.0,
+  "tolerance": 0.05
+}

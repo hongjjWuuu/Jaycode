@@ -86,6 +86,26 @@ class SQLiteMemoryStore:
                 )
                 """
             )
+            for name, definition in {
+                "source_task_id": "TEXT",
+                "confirmed_by": "TEXT",
+                "superseded_by": "TEXT",
+                "revoked_at": "TEXT",
+            }.items():
+                if name not in {row["name"] for row in conn.execute("PRAGMA table_info(memory_record)").fetchall()}:
+                    conn.execute(f"ALTER TABLE memory_record ADD COLUMN {name} {definition}")
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS memory_lifecycle_event (
+                    event_id TEXT PRIMARY KEY,
+                    memory_id TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    actor_id TEXT,
+                    metadata_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_memory_scope ON memory_record(scope, scope_id, status)"
             )
@@ -139,6 +159,8 @@ class SQLiteMemoryStore:
         scope_id: str = "local-user",
         source_type: str = "conversation",
         source_ref: str | None = None,
+        source_task_id: str | None = None,
+        actor_id: str | None = None,
     ) -> list[dict[str, Any]]:
         if scope not in {"user", "project", "team"}:
             raise ValueError("scope must be user, project, or team")
@@ -181,6 +203,10 @@ class SQLiteMemoryStore:
                     "status": "candidate",
                     "source_type": source_type,
                     "source_ref": source_ref,
+                    "source_task_id": source_task_id,
+                    "confirmed_by": None,
+                    "superseded_by": None,
+                    "revoked_at": None,
                     "extraction_source": extraction_source,
                     **governance,
                     "conflict_with": conflict["memory_id"] if conflict else None,
@@ -196,16 +222,17 @@ class SQLiteMemoryStore:
                         memory_id, scope, scope_id, memory_type, memory_key, content, content_hash,
                         confidence, status, source_type, source_ref, extraction_source, quality_score, quality_reasons,
                         retention_policy, expires_at, conflict_with, rag_path,
-                        created_at, updated_at, confirmed_at
+                        created_at, updated_at, confirmed_at, source_task_id, confirmed_by, superseded_by, revoked_at
                     ) VALUES (
                         :memory_id, :scope, :scope_id, :memory_type, :memory_key, :content, :content_hash,
                         :confidence, :status, :source_type, :source_ref, :extraction_source, :quality_score, :quality_reasons,
                         :retention_policy, :expires_at, :conflict_with, :rag_path,
-                        :created_at, :updated_at, :confirmed_at
+                        :created_at, :updated_at, :confirmed_at, :source_task_id, :confirmed_by, :superseded_by, :revoked_at
                     )
                     """,
                     record,
                 )
+                self._audit(conn, memory_id, "created", actor_id, {"source_type": source_type, "source_ref": source_ref})
                 created.append(record)
         return created
 
@@ -245,7 +272,7 @@ class SQLiteMemoryStore:
 
     # 用户确认后，这条记忆才真正变成长期记忆
     # 如果有冲突，把旧记忆标成 superseded
-    def confirm(self, memory_id: str, rag_path: str) -> dict[str, Any] | None:
+    def confirm(self, memory_id: str, rag_path: str, actor_id: str | None = None) -> dict[str, Any] | None:
         memory = self.get_memory(memory_id)
         if not memory:
             return None
@@ -253,17 +280,19 @@ class SQLiteMemoryStore:
         with self._connection() as conn:
             if memory.get("conflict_with"):
                 conn.execute(
-                    "UPDATE memory_record SET status = 'superseded', updated_at = ? WHERE memory_id = ?",
-                    (now, memory["conflict_with"]),
+                    "UPDATE memory_record SET status = 'superseded', superseded_by = ?, updated_at = ? WHERE memory_id = ?",
+                    (memory_id, now, memory["conflict_with"]),
                 )
+                self._audit(conn, memory["conflict_with"], "superseded", actor_id, {"superseded_by": memory_id})
             conn.execute(
                 """
                 UPDATE memory_record
-                SET status = 'confirmed', rag_path = ?, confirmed_at = ?, updated_at = ?
+                SET status = 'confirmed', rag_path = ?, confirmed_at = ?, confirmed_by = ?, updated_at = ?
                 WHERE memory_id = ?
                 """,
-                (rag_path, now, now, memory_id),
+                (rag_path, now, actor_id, now, memory_id),
             )
+            self._audit(conn, memory_id, "confirmed", actor_id, {"rag_path": rag_path})
         return self.get_memory(memory_id)
 
     # 定期把不该继续生效的记忆自动降级为过期
@@ -279,22 +308,45 @@ class SQLiteMemoryStore:
                     "UPDATE memory_record SET status = 'expired', updated_at = ? WHERE memory_id = ?",
                     [(utc_now_iso(), memory_id) for memory_id in due],
                 )
+                for memory_id in due:
+                    self._audit(conn, memory_id, "expired", None, {})
         return len(due)
     
     # 这条候选记忆不采纳。
-    def reject(self, memory_id: str) -> dict[str, Any] | None:
+    def reject(self, memory_id: str, actor_id: str | None = None) -> dict[str, Any] | None:
         now = utc_now_iso()
         with self._connection() as conn:
             updated = conn.execute(
                 "UPDATE memory_record SET status = 'rejected', updated_at = ? WHERE memory_id = ?",
                 (now, memory_id),
             ).rowcount
+            if updated:
+                self._audit(conn, memory_id, "rejected", actor_id, {})
         return self.get_memory(memory_id) if updated else None
 
     # 从数据库里真正移除这条记忆，比reject更加彻底
-    def delete(self, memory_id: str) -> bool:
+    def delete(self, memory_id: str, actor_id: str | None = None) -> bool:
         with self._connection() as conn:
-            return bool(conn.execute("DELETE FROM memory_record WHERE memory_id = ?", (memory_id,)).rowcount)
+            deleted = bool(conn.execute("DELETE FROM memory_record WHERE memory_id = ?", (memory_id,)).rowcount)
+            if deleted:
+                self._audit(conn, memory_id, "deleted", actor_id, {})
+            return deleted
+
+    def _audit(self, conn: sqlite3.Connection, memory_id: str, action: str, actor_id: str | None, metadata: dict[str, Any]) -> None:
+        conn.execute(
+            "INSERT INTO memory_lifecycle_event(event_id, memory_id, action, actor_id, metadata_json, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (f"mem_evt_{uuid4().hex}", memory_id, action, actor_id, json.dumps(metadata, ensure_ascii=False), utc_now_iso()),
+        )
+
+    def list_lifecycle_events(self, memory_id: str) -> list[dict[str, Any]]:
+        with self._connection() as conn:
+            rows = conn.execute("SELECT * FROM memory_lifecycle_event WHERE memory_id = ? ORDER BY created_at", (memory_id,)).fetchall()
+        result = []
+        for row in rows:
+            item = dict(row)
+            item["metadata"] = json.loads(item.pop("metadata_json") or "{}")
+            result.append(item)
+        return result
 
 # 记忆抽取的总调度器
 # 先做文本清洗

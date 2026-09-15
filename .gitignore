@@ -23,12 +23,14 @@ data/*.db
 data/*.db-*
 data/*.sqlite
 data/*.sqlite3
+.postgres-data/
 .jaycode/
 *.db
 *.sqlite
 *.sqlite3
 *.log
 logs/
+artifacts/
 
 # Temporary workspace files
 .slash_tmp/

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import contextvars
 import hashlib
+import logging
 import secrets
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
@@ -12,6 +14,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 
 from app.core.config import settings
+from app.core.observability import metrics
 from app.persistence.sqlite_store import task_store
 
 
@@ -26,6 +29,7 @@ class AuthContext:
 _request_context: contextvars.ContextVar[AuthContext | None] = contextvars.ContextVar(
     "jaycode_request_context", default=None
 )
+logger = logging.getLogger("jaycode.api")
 
 
 def current_auth_context() -> AuthContext | None:
@@ -62,6 +66,10 @@ def validate_security_configuration() -> None:
         raise RuntimeError("Production cannot disable JAYCODE_AUTH_ENABLED")
     if settings.app_env.lower() in {"prod", "production"} and not _configured_keys():
         raise RuntimeError("Production requires JAYCODE_API_KEYS")
+    if settings.jaycode_persistence_store.lower() == "postgres" and not settings.database_url:
+        raise RuntimeError("JAYCODE_PERSISTENCE_STORE=postgres requires DATABASE_URL")
+    if settings.jaycode_persistence_store.lower() == "postgres":
+        raise RuntimeError("PostgreSQL core adapter is not wired to every application domain; refusing mixed SQLite/PostgreSQL persistence.")
 
 
 def _auth_error(error_code: str, message: str, request_id: str, status_code: int) -> JSONResponse:
@@ -160,6 +168,7 @@ def audit_action(action: str, resource_type: str, resource_id: str = "", status:
 
 
 async def security_middleware(request: Request, call_next: Callable[[Request], Awaitable[Any]]) -> Any:
+    started = time.perf_counter()
     request_id = request.headers.get("x-request-id") or f"req_{uuid4().hex}"
     if not request.url.path.startswith("/api/v1/") or not _auth_required():
         context = AuthContext("local-user", "admin", request_id, authenticated=False)
@@ -167,6 +176,8 @@ async def security_middleware(request: Request, call_next: Callable[[Request], A
         try:
             response = await call_next(request)
             response.headers["X-Request-ID"] = request_id
+            metrics.inc("jaycode_http_requests_total", labels={"path": request.url.path, "status": str(response.status_code)})
+            metrics.observe("jaycode_http_request", started, {"path": request.url.path})
             return response
         finally:
             _request_context.reset(token)
@@ -186,6 +197,9 @@ async def security_middleware(request: Request, call_next: Callable[[Request], A
         response = await call_next(request)
         response.headers["X-Request-ID"] = request_id
         _audit(context, request.method, request.url.path, str(response.status_code), {"required_role": required})
+        metrics.inc("jaycode_http_requests_total", labels={"path": request.url.path, "status": str(response.status_code)})
+        metrics.observe("jaycode_http_request", started, {"path": request.url.path})
+        logger.info("request_completed", extra={"request_id": request_id, "actor_id": context.actor_id, "role": context.role, "status": str(response.status_code), "latency_ms": round((time.perf_counter() - started) * 1000, 2)})
         return response
     finally:
         _request_context.reset(token)

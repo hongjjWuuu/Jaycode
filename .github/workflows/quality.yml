@@ -18,6 +18,10 @@ jobs:
       - run: pip-audit
       - run: ruff check app tests
       - run: pytest -q tests
+      - run: python -m app.benchmark_runner --type rag-gold --output artifacts/rag-gold-result.json
+      - run: python scripts/check_rag_gold_baseline.py artifacts/rag-gold-result.json
+      - run: python scripts/worker_load_test.py --tasks 100 --workers 2
+      - run: python -m app.persistence.migrate --check
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -29,3 +33,30 @@ jobs:
         shell: bash
         run: |
           ! grep -RniE 'F:/JayAgent/Jaycode|F:\\JayAgent\\Jaycode|DevAgent|devagent|x_devagent' README.md docs app web/src examples scripts tests
+
+  postgres-store:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: jaycode
+          POSTGRES_PASSWORD: jaycode-ci
+          POSTGRES_DB: jaycode_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U jaycode -d jaycode_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgresql://jaycode:jaycode-ci@localhost:5432/jaycode_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[dev,vector]"
+      - run: pytest -q tests/test_postgres_store.py

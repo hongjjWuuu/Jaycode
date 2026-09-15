@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import AsyncIterator
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from app.agents.marketplace_tools import check_permission, list_tools
@@ -16,21 +17,16 @@ from app.benchmark_runner import (
     run_workflow_benchmark,
 )
 from app.core.security import audit_action, execution_auth_context
-from app.graphs.collaboration_runner import run_collaboration_task
 from app.graphs.project_analyzer_graph import project_analyzer_graph
 from app.graphs.studio_graphs import (
     code_review_graph,
-    collaboration_graph,
     learning_coach_graph,
     rag_process_graph,
 )
 from app.graphs.workflow_compiler import (
-    resume_task_workflow,
     run_compiled_workflow,
-    run_task_workflow,
     validate_workflow_definition,
 )
-from app.harness.events import utc_now_iso
 from app.harness.policy import tool_policy
 from app.harness.runtime import harness_runtime
 from app.marketplace.catalog import marketplace_catalog
@@ -51,7 +47,6 @@ from app.schemas.studio import (
     CodeReviewRequest,
     CodeReviewResponse,
     CollaborationRequest,
-    CollaborationResponse,
     HumanReviewRequest,
     HumanReviewResponse,
     KnowledgeNoteRequest,
@@ -865,10 +860,31 @@ def update_workflow(workflow_id: str, request: WorkflowSaveRequest) -> WorkflowS
     audit_action("workflow_update", "workflow", workflow_id)
     return WorkflowSaveResponse(workflow=workflow)
 
-@router.post("/agents/collaborate", response_model=CollaborationResponse, tags=["Multi-Agent Collaboration"])
-def run_collaboration(request: CollaborationRequest) -> CollaborationResponse:
-    result = collaboration_graph.invoke(request.model_dump())["result"]
-    return CollaborationResponse(**result)
+@router.post("/agents/collaborate", response_model=TaskRunResponse, tags=["Multi-Agent Collaboration"])
+def run_collaboration(request: CollaborationRequest) -> TaskRunResponse:
+    """Submit legacy collaboration requests through the durable task queue."""
+    context = harness_runtime.create_context(
+        goal=request.goal,
+        project_path=request.project_path,
+        variables={
+            "execution_mode": "collaboration",
+            "require_human_review": request.require_human_review,
+            "_jaycode_runner": "collaboration",
+        },
+        input_state={
+            "goal": request.goal,
+            "project_path": request.project_path,
+            "require_human_review": request.require_human_review,
+            "input_text": request.goal,
+            "_jaycode_runner": "collaboration",
+        },
+    )
+    return TaskRunResponse(
+        task_id=context.task_id,
+        status=context.status,
+        events=task_store.get_events(context.task_id),
+        result={},
+    )
 
 
 # 通过 Harness 跑任务（治理模式）
@@ -877,17 +893,6 @@ def run_collaboration(request: CollaborationRequest) -> CollaborationResponse:
 @router.post("/tasks/run", response_model=TaskRunResponse, tags=["Task Runtime"])
 def run_task(request: TaskRunRequest) -> TaskRunResponse:
     workflow_payload = _resolve_task_workflow(request)
-    if request.idempotency_key:
-        existing = task_store.get_task_by_idempotency_key(request.idempotency_key)
-        if existing:
-            artifact = next((item for item in task_store.get_artifacts(existing["task_id"]) if item.get("name") == "result"), {})
-            return TaskRunResponse(
-                task_id=existing["task_id"],
-                status=existing["status"],
-                events=task_store.get_events(existing["task_id"]),
-                result=artifact.get("content") if isinstance(artifact.get("content"), dict) else {},
-            )
-    # 1. 创建任务上下文
     context = harness_runtime.create_context(
         goal=request.goal,
         project_path=request.project_path,
@@ -897,51 +902,17 @@ def run_task(request: TaskRunRequest) -> TaskRunResponse:
             "execution_mode": request.execution_mode,
             "workflow_id": request.workflow_id,
             "idempotency_key": request.idempotency_key,
+            "_jaycode_runner": "workflow",
         },
+        input_state=workflow_payload,
     )
-    try:
-        # 2. 跑图（带治理）
-        if request.background:
-            harness_runtime.run_graph_async(context, run_task_workflow, workflow_payload)
-            return TaskRunResponse(task_id=context.task_id, status="queued", events=task_store.get_events(context.task_id), result={})
-        result = harness_runtime.run_graph(context, run_task_workflow, workflow_payload)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return TaskRunResponse(**result)
+    return TaskRunResponse(task_id=context.task_id, status=context.status, events=task_store.get_events(context.task_id), result={})
 
 
 @router.post("/tasks/run/stream", tags=["Task Runtime"])
-async def run_task_stream(request: TaskRunRequest) -> StreamingResponse:
-    async def event_stream() -> AsyncIterator[str]:
-        try:
-            response = run_task(request)
-            for event in response.events:
-                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
-            payload = {
-                "type": "task_result",
-                "task_id": response.task_id,
-                "status": response.status,
-                "final_report": response.result.get("final_report"),
-                "mermaid": response.result.get("mermaid"),
-                "suggestions": response.result.get("suggestions"),
-                "suggestion_records": response.result.get("suggestion_records"),
-                "risk_level": response.result.get("risk_level"),
-                "review_required": response.result.get("review_required"),
-                "next_actions": response.result.get("next_actions"),
-                "governance": response.result.get("governance"),
-                "tool_calls": response.result.get("tool_calls"),
-                "agent_outputs": response.result.get("agent_outputs"),
-                "human_review_required": response.result.get("human_review_required"),
-                "planned_workflow": response.result.get("planned_workflow"),
-                "validation": response.result.get("validation"),
-            }
-            yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
-        except Exception as exc:  # noqa: BLE001 - API stream boundary serializes unexpected failures
-            yield f"data: {json.dumps({'type': 'error', 'content': str(exc)}, ensure_ascii=False)}\n\n"
-        finally:
-            yield "data: {\"type\": \"complete\", \"completed\": true}\n\n"
-
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+async def run_task_stream(request: TaskRunRequest, http_request: Request) -> StreamingResponse:
+    response = run_task(request)
+    return StreamingResponse(_subscribe_task_events(response.task_id, http_request), media_type="text/event-stream")
 
 
 @router.post("/tasks/collaborate", response_model=TaskRunResponse, tags=["Task Runtime"])
@@ -953,57 +924,67 @@ def run_collaboration_task_api(request: TaskRunRequest) -> TaskRunResponse:
             "max_files": request.max_files,
             "require_human_review": request.require_human_review,
             "execution_mode": "collaboration",
+            "idempotency_key": request.idempotency_key,
+            "_jaycode_runner": "collaboration",
+        },
+        input_state={
+            "goal": request.goal,
+            "project_path": request.project_path,
+            "max_files": request.max_files,
+            "require_human_review": request.require_human_review,
+            "input_text": request.input_text or request.goal,
+            "_jaycode_runner": "collaboration",
         },
     )
-    input_state = {
-        "goal": request.goal,
-        "project_path": request.project_path,
-        "max_files": request.max_files,
-        "require_human_review": request.require_human_review,
-        "input_text": request.input_text or request.goal,
-    }
-    try:
-        result = harness_runtime.run_graph(context, run_collaboration_task, input_state)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return TaskRunResponse(**result)
+    return TaskRunResponse(task_id=context.task_id, status=context.status, events=task_store.get_events(context.task_id), result={})
 
 
 @router.post("/tasks/collaborate/stream", tags=["Task Runtime"])
-async def run_collaboration_task_stream(request: TaskRunRequest) -> StreamingResponse:
-    async def event_stream() -> AsyncIterator[str]:
-        try:
-            response = run_collaboration_task_api(request)
-            for event in response.events:
-                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
-            payload = {
-                "type": "task_result",
-                "task_id": response.task_id,
-                "status": response.status,
-                "final_report": response.result.get("final_report"),
-                "mermaid": response.result.get("mermaid"),
-                "suggestions": response.result.get("suggestions"),
-                "suggestion_records": response.result.get("suggestion_records"),
-                "risk_level": response.result.get("risk_level"),
-                "review_required": response.result.get("review_required"),
-                "next_actions": response.result.get("next_actions"),
-                "governance": response.result.get("governance"),
-                "tool_calls": response.result.get("tool_calls"),
-                "agent_outputs": response.result.get("agent_outputs"),
-                "human_review_required": response.result.get("human_review_required"),
-            }
-            yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
-        except Exception as exc:  # noqa: BLE001 - API stream boundary serializes unexpected failures
-            yield f"data: {json.dumps({'type': 'error', 'content': str(exc)}, ensure_ascii=False)}\n\n"
-        finally:
-            yield "data: {\"type\": \"complete\", \"completed\": true}\n\n"
+async def run_collaboration_task_stream(request: TaskRunRequest, http_request: Request) -> StreamingResponse:
+    response = run_collaboration_task_api(request)
+    return StreamingResponse(_subscribe_task_events(response.task_id, http_request), media_type="text/event-stream")
 
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+async def _subscribe_task_events(task_id: str, request: Request) -> AsyncIterator[str]:
+    try:
+        sequence = int(request.headers.get("last-event-id", "0") or 0)
+    except ValueError:
+        sequence = 0
+    last_heartbeat = asyncio.get_running_loop().time()
+    while True:
+        if await request.is_disconnected():
+            return
+        new_events = task_store.get_events_after(task_id, sequence)
+        for event in new_events:
+            sequence = int(event.get("event_seq") or sequence)
+            yield f"id: {sequence}\ndata: {json.dumps(event, ensure_ascii=False)}\n\n"
+        task = task_store.get_task(task_id)
+        if not task:
+            yield f"data: {json.dumps({'type': 'error', 'task_id': task_id, 'content': 'Task not found'}, ensure_ascii=False)}\n\n"
+            break
+        if task.get("status") in {"completed", "failed", "cancelled", "waiting_review", "rejected"}:
+            artifacts = task_store.get_artifacts(task_id)
+            artifact = next((item for item in reversed(artifacts) if item.get("name") == "result"), {})
+            result = artifact.get("content") if isinstance(artifact.get("content"), dict) else {}
+            result_payload = {"type": "task_result", "task_id": task_id, "status": task["status"], **result}
+            yield f"data: {json.dumps(result_payload, ensure_ascii=False)}\n\n"
+            break
+        now = asyncio.get_running_loop().time()
+        if now - last_heartbeat >= 15:
+            yield ": heartbeat\n\n"
+            last_heartbeat = now
+        await asyncio.sleep(0.5)
+    yield "data: {\"type\": \"complete\", \"completed\": true}\n\n"
 
 
 @router.get("/tasks", tags=["Task Runtime"])
 def list_tasks(limit: int = 100, offset: int = 0) -> dict[str, object]:
     return {"tasks": task_store.list_tasks(limit=limit, offset=offset)}
+
+
+@router.get("/workers", tags=["Task Runtime"])
+def list_workers() -> dict[str, object]:
+    return {"workers": task_store.list_workers()}
 
 
 @router.get("/tasks/{task_id}", tags=["Task Runtime"])
@@ -1015,10 +996,10 @@ def get_task(task_id: str) -> dict[str, object]:
 
 
 @router.get("/tasks/{task_id}/events", tags=["Task Runtime"])
-def get_task_events(task_id: str) -> dict[str, object]:
+def get_task_events(task_id: str, after_seq: int = 0) -> dict[str, object]:
     if not task_store.get_task(task_id):
         raise HTTPException(status_code=404, detail="Task not found")
-    return {"events": task_store.get_events(task_id)}
+    return {"events": task_store.get_events_after(task_id, max(0, after_seq))}
 
 
 @router.get("/tasks/{task_id}/report", tags=["Task Runtime"])
@@ -1112,6 +1093,7 @@ def extract_memory_candidates(request: MemoryExtractRequest) -> list[dict[str, o
             scope_id=request.scope_id,
             source_type=request.source_type,
             source_ref=request.source_ref,
+            actor_id=context.actor_id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -1145,7 +1127,7 @@ def confirm_memory(
     _authorize_memory(memory["scope"], memory["scope_id"], "confirm", context.actor_id, context.role)
     collection = request.collection or ("project-memory" if memory["scope"] == "project" else f"user-memory/{memory['scope_id']}")
     saved = rag_store.add_note(collection, f"memory/{memory_id}", memory["content"])
-    confirmed = memory_store.confirm(memory_id, saved["path"])
+    confirmed = memory_store.confirm(memory_id, saved["path"], actor_id=context.actor_id)
     if not confirmed:
         raise HTTPException(status_code=404, detail="Memory not found")
     return confirmed
@@ -1160,7 +1142,7 @@ def reject_memory(
         raise HTTPException(status_code=404, detail="Memory not found")
     context = execution_auth_context()
     _authorize_memory(memory["scope"], memory["scope_id"], "reject", context.actor_id, context.role)
-    rejected = memory_store.reject(memory_id)
+    rejected = memory_store.reject(memory_id, actor_id=context.actor_id)
     if not rejected:
         raise HTTPException(status_code=404, detail="Memory not found")
     return rejected
@@ -1178,9 +1160,16 @@ def delete_memory(
     if memory.get("rag_path"):
         collection = "project-memory" if memory["scope"] == "project" else f"user-memory/{memory['scope_id']}"
         rag_store.delete_note(collection, memory["rag_path"])
-    if not memory_store.delete(memory_id):
+    if not memory_store.delete(memory_id, actor_id=context.actor_id):
         raise HTTPException(status_code=404, detail="Memory not found")
     return {"deleted": True}
+
+
+@router.get("/memories/{memory_id}/lifecycle", tags=["RAG Knowledge Agent"])
+def list_memory_lifecycle(memory_id: str) -> dict[str, object]:
+    if not memory_store.get_memory(memory_id):
+        raise HTTPException(status_code=404, detail="Memory not found")
+    return {"events": memory_store.list_lifecycle_events(memory_id)}
 
 
 def _authorize_memory(scope: str, scope_id: str, action: str, actor: str | None, role: str | None) -> None:
@@ -1535,96 +1524,13 @@ def _resume_after_human_review(
     action: str,
     comment: str | None,
 ) -> HumanReviewResponse:
-    task = task_store.get_task(task_id)
-    if not task:
+    if not task_store.get_task(task_id):
         raise HTTPException(status_code=404, detail="Task not found")
-    
-    # 1. 记录审批事件
-    task_store.record_review_action(task_id, action, comment)
-    review_event = {
-        "event_id": f"evt_{uuid4().hex}",
-        "task_id": task_id,
-        "type": "human_review",
-        "node": str(checkpoint.get("paused_node_id") or "human_review"),
-        "agent": "human_reviewer",
-        "status": "approved",
-        "content": _review_content(action, comment),
-        "data": {"action": action, "comment": comment, "resume": True},
-    }
-    task_store.append_event(review_event)
-    task_store.update_task(task_id, "running")
-    task_store.append_event(
-        {
-            "event_id": f"evt_{uuid4().hex}",
-            "task_id": task_id,
-            "type": "task",
-            "node": "workflow_resume",
-            "agent": "harness_runtime",
-            "status": "running",
-            "content": "Workflow resume started from approved checkpoint.",
-            "data": {"paused_node_id": checkpoint.get("paused_node_id")},
-        }
-    )
-
     try:
-         # 2. 真正恢复 ← 这里调了 resume_task_workflow
-        result = resume_task_workflow(checkpoint, action, comment)
-    except Exception as exc:
-        task_store.update_task(task_id, "failed")
-        task_store.append_event(
-            {
-                "event_id": f"evt_{uuid4().hex}",
-                "task_id": task_id,
-                "type": "error",
-                "node": "workflow_resume",
-                "agent": "harness_runtime",
-                "status": "failed",
-                "content": str(exc),
-                "data": {"paused_node_id": checkpoint.get("paused_node_id")},
-            }
-        )
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    public_result = result.get("result", {})
-    final_report = str(result.get("final_report") or public_result.get("final_report") or "")
-    next_status = "waiting_review" if public_result.get("human_review_required") and public_result.get("human_review_packet") else "completed"
-    resume_events = [event for event in result.get("events", []) if event.get("task_id")]
-    task_store.save_artifact(
-        task_id,
-        "workflow_resume",
-        str(checkpoint.get("paused_node_id") or "resume"),
-        {
-            "task_id": task_id,
-            "resumed_from": checkpoint.get("paused_node_id"),
-            "action": action,
-            "comment": comment,
-            "status": next_status,
-            "before_state": checkpoint.get("state", {}),
-            "after_events": resume_events,
-            "created_at": utc_now_iso(),
-        },
-    )
-    task_store.save_artifact(task_id, "graph_result", "result", public_result)
-
-    # 3. 保存恢复后的结果
-    if public_result.get("resume_checkpoint"):
-        task_store.save_artifact(task_id, "workflow_checkpoint", "resume", public_result["resume_checkpoint"])
-    task_store.update_task(task_id, next_status, final_report)
-    for event in resume_events:
-        task_store.append_event(event)
-    task_store.append_event(
-        {
-            "event_id": f"evt_{uuid4().hex}",
-            "task_id": task_id,
-            "type": "task",
-            "node": "workflow_resume",
-            "agent": "harness_runtime",
-            "status": next_status,
-            "content": "Workflow resume completed." if next_status == "completed" else "Workflow paused again for human review.",
-            "data": {"paused_node_id": checkpoint.get("paused_node_id")},
-        }
-    )
-    return HumanReviewResponse(task_id=task_id, status=next_status, action=action, comment=comment)
+        task_store.queue_task_resume(task_id, checkpoint, action, comment)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return HumanReviewResponse(task_id=task_id, status="queued", action=action, comment=comment)
 
 
 def _answer_from_task_context(

@@ -6,7 +6,19 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from app.harness.events import utc_now_iso
+from app.harness.events import BEIJING_TZ, utc_now_iso
+
+TASK_TRANSITIONS: dict[str, set[str]] = {
+    "created": {"queued", "running", "cancelled", "failed"},
+    "queued": {"running", "cancelled", "failed"},
+    "running": {"completed", "waiting_review", "paused", "failed", "cancelled", "queued"},
+    "waiting_review": {"running", "queued", "completed", "cancelled", "rejected", "paused"},
+    "paused": {"queued", "running", "cancelled", "failed"},
+    "failed": {"queued", "running"},
+    "completed": set(),
+    "cancelled": {"queued"},
+    "rejected": set(),
+}
 
 # 这个文件不是简单的数据层，而是整个项目的“事实仓库”。  
 # 它把任务、事件、产物、工作流、技能、MCP、LLM、Benchmark 都存到同一个治理型数据库里。
@@ -52,6 +64,22 @@ class SQLiteTaskStore:
             self._ensure_column(conn, "agent_task", "execution_version", "INTEGER NOT NULL DEFAULT 1")
             self._ensure_column(conn, "agent_task", "retry_count", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column(conn, "agent_task", "resume_count", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(conn, "agent_task", "input_json", "TEXT NOT NULL DEFAULT '{}'")
+            self._ensure_column(conn, "agent_task", "worker_id", "TEXT")
+            self._ensure_column(conn, "agent_task", "lease_until", "TEXT")
+            self._ensure_column(conn, "agent_task", "heartbeat_at", "TEXT")
+            self._ensure_column(conn, "agent_task", "attempt", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(conn, "agent_task", "error_code", "TEXT")
+            self._ensure_column(conn, "agent_task", "error_message", "TEXT")
+            self._ensure_column(conn, "agent_task", "failed_at", "TEXT")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_task_queue ON agent_task(status, lease_until, created_at)")
+            conn.execute(
+                """CREATE TABLE IF NOT EXISTS agent_worker (
+                    worker_id TEXT PRIMARY KEY, pid INTEGER NOT NULL, started_at TEXT NOT NULL,
+                    last_heartbeat TEXT NOT NULL, status TEXT NOT NULL, active_task_id TEXT,
+                    restart_count INTEGER NOT NULL DEFAULT 0
+                )"""
+            )
             # 任务事件流
             conn.execute(
                 """
@@ -425,7 +453,7 @@ class SQLiteTaskStore:
 
     # 不是“简单建表”，而是考虑了 schema 演进 这说明项目已经把“版本兼容”当成架构的一部分。
     # 四个方法构成了任务治理的基础动作： 创建任务 更新状态 写事件 存产物
-    def create_task(self, task_id: str, goal: str, project_path: str | None, status: str, context: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    def create_task(self, task_id: str, goal: str, project_path: str | None, status: str, context: dict[str, Any] | None = None, input_state: dict[str, Any] | None = None) -> dict[str, Any] | None:
         now = utc_now_iso()
         with self._connect() as conn:
             idempotency_key = (context or {}).get("idempotency_key")
@@ -435,10 +463,10 @@ class SQLiteTaskStore:
                     return dict(existing)
             conn.execute(
                 """
-                INSERT OR REPLACE INTO agent_task(task_id, goal, project_path, status, created_at, updated_at, request_id, actor_id, role, idempotency_key, execution_version, retry_count, resume_count)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT OR REPLACE INTO agent_task(task_id, goal, project_path, status, created_at, updated_at, request_id, actor_id, role, idempotency_key, execution_version, retry_count, resume_count, input_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (task_id, goal, project_path, status, now, now, (context or {}).get("request_id"), (context or {}).get("actor_id"), (context or {}).get("role"), idempotency_key, 1, 0, 0),
+                (task_id, goal, project_path, status, now, now, (context or {}).get("request_id"), (context or {}).get("actor_id"), (context or {}).get("role"), idempotency_key, 1, 0, 0, json.dumps(input_state or {}, ensure_ascii=False)),
             )
         return None
 
@@ -505,15 +533,21 @@ class SQLiteTaskStore:
     def update_task(self, task_id: str, status: str, final_report: str | None = None, *, retry: bool = False, resume: bool = False) -> None:
         now = utc_now_iso()
         with self._connect() as conn:
+            current = conn.execute("SELECT status FROM agent_task WHERE task_id = ?", (task_id,)).fetchone()
+            if current and status != current["status"] and status not in TASK_TRANSITIONS.get(current["status"], set()):
+                raise ValueError(f"Invalid task status transition: {current['status']} -> {status}")
             conn.execute(
                 """
                 UPDATE agent_task
                 SET status = ?, final_report = COALESCE(?, final_report), updated_at = ?,
                     retry_count = retry_count + ?, resume_count = resume_count + ?,
-                    execution_version = execution_version + 1
+                    execution_version = execution_version + 1,
+                    worker_id = CASE WHEN ? IN ('completed', 'failed', 'cancelled', 'paused') THEN NULL ELSE worker_id END,
+                    lease_until = CASE WHEN ? IN ('completed', 'failed', 'cancelled', 'paused') THEN NULL ELSE lease_until END,
+                    heartbeat_at = CASE WHEN ? IN ('completed', 'failed', 'cancelled', 'paused') THEN NULL ELSE heartbeat_at END
                 WHERE task_id = ?
                 """,
-                (status, final_report, now, int(retry), int(resume), task_id),
+                (status, final_report, now, int(retry), int(resume), status, status, status, task_id),
             )
 
     def append_event(self, event: dict[str, Any]) -> None:
@@ -562,13 +596,21 @@ class SQLiteTaskStore:
         final_report: str | None,
         artifacts: list[tuple[str, str, Any]],
         events: list[dict[str, Any]],
+        *,
+        error_code: str | None = None,
+        error_message: str | None = None,
     ) -> None:
         """Atomically persist task state, artifacts and events for one execution."""
         now = utc_now_iso()
         with self._connect() as conn:
+            current = conn.execute("SELECT status FROM agent_task WHERE task_id = ?", (task_id,)).fetchone()
+            if not current:
+                raise ValueError(f"Task `{task_id}` does not exist.")
+            if status != current["status"] and status not in TASK_TRANSITIONS.get(current["status"], set()):
+                raise ValueError(f"Invalid task status transition: {current['status']} -> {status}")
             conn.execute(
-                "UPDATE agent_task SET status = ?, final_report = COALESCE(?, final_report), updated_at = ?, execution_version = execution_version + 1 WHERE task_id = ?",
-                (status, final_report, now, task_id),
+                "UPDATE agent_task SET status = ?, final_report = COALESCE(?, final_report), updated_at = ?, execution_version = execution_version + 1, worker_id = NULL, lease_until = NULL, heartbeat_at = NULL, error_code = ?, error_message = ?, failed_at = ? WHERE task_id = ?",
+                (status, final_report, now, error_code if status == "failed" else None, error_message if status == "failed" else None, now if status == "failed" else None, task_id),
             )
             version = conn.execute("SELECT execution_version FROM agent_task WHERE task_id = ?", (task_id,)).fetchone()
             execution_version = int(version[0] if version else 1)
@@ -587,11 +629,62 @@ class SQLiteTaskStore:
                     (event_id, task_id, event.get("type", "event"), event.get("node"), event.get("agent"), event.get("status"), event.get("content"), json.dumps(event.get("data", {}), ensure_ascii=False), event.get("timestamp") or now, sequence, execution_version),
                 )
 
+    def cancel_task(self, task_id: str) -> bool:
+        now = utc_now_iso()
+        event_id = f"evt_{uuid4().hex}"
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute("SELECT status, execution_version FROM agent_task WHERE task_id = ?", (task_id,)).fetchone()
+            if not row or row["status"] in {"completed", "failed", "cancelled", "rejected"}:
+                return False
+            if "cancelled" not in TASK_TRANSITIONS.get(row["status"], set()):
+                raise ValueError(f"Invalid task status transition: {row['status']} -> cancelled")
+            conn.execute("UPDATE agent_task SET status = 'cancelled', updated_at = ?, worker_id = NULL, lease_until = NULL, heartbeat_at = NULL, execution_version = execution_version + 1 WHERE task_id = ?", (now, task_id))
+            sequence = conn.execute("SELECT COALESCE(MAX(event_seq), 0) + 1 FROM agent_task_event WHERE task_id = ?", (task_id,)).fetchone()[0]
+            conn.execute(
+                "INSERT INTO agent_task_event(event_id, task_id, event_type, status, content, data_json, created_at, event_seq, execution_version) VALUES (?, ?, 'task_cancelled', 'cancelled', 'Task cancellation requested.', '{}', ?, ?, ?)",
+                (event_id, task_id, now, sequence, int(row["execution_version"]) + 1),
+            )
+        return True
+
+    def queue_task_resume(
+        self, task_id: str, checkpoint: dict[str, Any], action: str, comment: str | None,
+    ) -> None:
+        """Atomically record reviewer action and enqueue checkpoint continuation."""
+        now = utc_now_iso()
+        event_id = f"evt_{uuid4().hex}"
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute("SELECT status, input_json, execution_version FROM agent_task WHERE task_id = ?", (task_id,)).fetchone()
+            if not row:
+                raise ValueError(f"Task `{task_id}` does not exist.")
+            if row["status"] != "waiting_review":
+                raise ValueError(f"Task `{task_id}` is not waiting for review.")
+            try:
+                task_input = json.loads(row["input_json"] or "{}")
+            except (TypeError, ValueError):
+                task_input = {}
+            task_input["_jaycode_runner"] = "resume"
+            task_input["_resume_payload"] = {"checkpoint": checkpoint, "action": action, "comment": comment}
+            conn.execute(
+                "UPDATE agent_task SET status = 'queued', input_json = ?, updated_at = ?, resume_count = resume_count + 1, execution_version = execution_version + 1, worker_id = NULL, lease_until = NULL, heartbeat_at = NULL WHERE task_id = ?",
+                (json.dumps(task_input, ensure_ascii=False), now, task_id),
+            )
+            conn.execute(
+                "INSERT INTO human_review_action(task_id, action, comment, created_at) VALUES (?, ?, ?, ?)",
+                (task_id, action, comment, now),
+            )
+            sequence = conn.execute("SELECT COALESCE(MAX(event_seq), 0) + 1 FROM agent_task_event WHERE task_id = ?", (task_id,)).fetchone()[0]
+            conn.execute(
+                "INSERT INTO agent_task_event(event_id, task_id, event_type, node, agent, status, content, data_json, created_at, event_seq, execution_version) VALUES (?, ?, 'human_review', ?, 'human_reviewer', 'queued', ?, ?, ?, ?, ?)",
+                (event_id, task_id, str(checkpoint.get("paused_node_id") or "human_review"), f"Review action {action} queued for resume.", json.dumps({"action": action, "resume": True}, ensure_ascii=False), now, sequence, int(row["execution_version"]) + 1),
+            )
+
     def list_tasks(self, limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
         with self._connect() as conn:
             rows = conn.execute(
                 """
-                SELECT task_id, goal, project_path, status, created_at, updated_at, final_report, request_id, actor_id, role, idempotency_key, execution_version, retry_count, resume_count
+                SELECT task_id, goal, project_path, status, created_at, updated_at, final_report, request_id, actor_id, role, idempotency_key, execution_version, retry_count, resume_count, worker_id, lease_until, heartbeat_at, attempt, error_code, error_message, failed_at
                 FROM agent_task
                 ORDER BY created_at DESC
                 LIMIT ? OFFSET ?
@@ -604,7 +697,7 @@ class SQLiteTaskStore:
         with self._connect() as conn:
             row = conn.execute(
                 """
-                SELECT task_id, goal, project_path, status, created_at, updated_at, final_report, request_id, actor_id, role, idempotency_key, execution_version, retry_count, resume_count
+                SELECT task_id, goal, project_path, status, created_at, updated_at, final_report, request_id, actor_id, role, idempotency_key, execution_version, retry_count, resume_count, worker_id, lease_until, heartbeat_at, attempt, error_code, error_message, failed_at
                 FROM agent_task
                 WHERE task_id = ?
                 """,
@@ -616,6 +709,112 @@ class SQLiteTaskStore:
         with self._connect() as conn:
             row = conn.execute("SELECT * FROM agent_task WHERE idempotency_key = ?", (idempotency_key,)).fetchone()
         return dict(row) if row else None
+
+    def get_task_input(self, task_id: str) -> dict[str, Any]:
+        with self._connect() as conn:
+            row = conn.execute("SELECT input_json FROM agent_task WHERE task_id = ?", (task_id,)).fetchone()
+        if not row:
+            return {}
+        try:
+            value = json.loads(row["input_json"] or "{}")
+        except (TypeError, ValueError):
+            return {}
+        return value if isinstance(value, dict) else {}
+
+    def claim_next_task(self, worker_id: str, lease_seconds: int = 30) -> dict[str, Any] | None:
+        """Atomically claim one queued or expired task for a local worker."""
+        from datetime import datetime, timedelta
+
+        now = utc_now_iso()
+        lease_until = (datetime.now(BEIJING_TZ) + timedelta(seconds=max(1, lease_seconds))).strftime("%Y-%m-%d, %H:%M:%S")
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT * FROM agent_task WHERE status = 'queued' OR (status = 'running' AND lease_until IS NOT NULL AND lease_until < ?) ORDER BY created_at LIMIT 1",
+                (now,),
+            ).fetchone()
+            if not row:
+                return None
+            conn.execute(
+                "UPDATE agent_task SET status = 'running', worker_id = ?, lease_until = ?, heartbeat_at = ?, attempt = attempt + 1, updated_at = ? WHERE task_id = ?",
+                (worker_id, lease_until, now, now, row["task_id"]),
+            )
+            claimed = conn.execute("SELECT * FROM agent_task WHERE task_id = ?", (row["task_id"],)).fetchone()
+        return dict(claimed) if claimed else None
+
+    def claim_task(self, task_id: str, worker_id: str, lease_seconds: int = 30) -> dict[str, Any] | None:
+        """Claim a specific queued task for a process-spawned worker."""
+        from datetime import datetime, timedelta
+
+        now = utc_now_iso()
+        lease_until = (datetime.now(BEIJING_TZ) + timedelta(seconds=max(1, lease_seconds))).strftime("%Y-%m-%d, %H:%M:%S")
+        with self._connect() as conn:
+            result = conn.execute(
+                "UPDATE agent_task SET status = 'running', worker_id = ?, lease_until = ?, heartbeat_at = ?, attempt = attempt + 1, updated_at = ? WHERE task_id = ? AND status IN ('created', 'queued')",
+                (worker_id, lease_until, now, now, task_id),
+            )
+            if result.rowcount != 1:
+                return None
+            row = conn.execute("SELECT * FROM agent_task WHERE task_id = ?", (task_id,)).fetchone()
+        return dict(row) if row else None
+
+    def heartbeat_task(self, task_id: str, worker_id: str, lease_seconds: int = 30) -> bool:
+        from datetime import datetime, timedelta
+
+        now = utc_now_iso()
+        lease_until = (datetime.now(BEIJING_TZ) + timedelta(seconds=max(1, lease_seconds))).strftime("%Y-%m-%d, %H:%M:%S")
+        with self._connect() as conn:
+            result = conn.execute(
+                "UPDATE agent_task SET heartbeat_at = ?, lease_until = ?, updated_at = ? WHERE task_id = ? AND worker_id = ? AND status = 'running'",
+                (now, lease_until, now, task_id, worker_id),
+            )
+        return result.rowcount == 1
+
+    def register_worker(self, worker_id: str, pid: int) -> None:
+        now = utc_now_iso()
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO agent_worker(worker_id, pid, started_at, last_heartbeat, status, active_task_id) VALUES (?, ?, ?, ?, 'running', NULL) ON CONFLICT(worker_id) DO UPDATE SET pid = excluded.pid, started_at = excluded.started_at, last_heartbeat = excluded.last_heartbeat, status = 'running', active_task_id = NULL",
+                (worker_id, pid, now, now),
+            )
+
+    def heartbeat_worker(self, worker_id: str, active_task_id: str | None = None) -> None:
+        with self._connect() as conn:
+            conn.execute("UPDATE agent_worker SET last_heartbeat = ?, status = 'running', active_task_id = ? WHERE worker_id = ?", (utc_now_iso(), active_task_id, worker_id))
+
+    def unregister_worker(self, worker_id: str) -> None:
+        with self._connect() as conn:
+            conn.execute("UPDATE agent_worker SET last_heartbeat = ?, status = 'stopped', active_task_id = NULL WHERE worker_id = ?", (utc_now_iso(), worker_id))
+
+    def list_workers(self) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute("SELECT worker_id, pid, started_at, last_heartbeat, status, active_task_id, restart_count FROM agent_worker ORDER BY started_at").fetchall()
+        return [dict(row) for row in rows]
+
+    def recover_expired_tasks(self) -> int:
+        return len(self.recover_expired_task_ids())
+
+    def recover_expired_task_ids(self) -> list[str]:
+        now = utc_now_iso()
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            rows = conn.execute(
+                "SELECT task_id, worker_id, execution_version FROM agent_task WHERE status = 'running' AND lease_until IS NOT NULL AND lease_until < ?",
+                (now,),
+            ).fetchall()
+            for row in rows:
+                task_id = str(row["task_id"])
+                next_version = int(row["execution_version"]) + 1
+                conn.execute(
+                    "UPDATE agent_task SET status = 'queued', worker_id = NULL, lease_until = NULL, heartbeat_at = NULL, updated_at = ?, execution_version = ? WHERE task_id = ? AND status = 'running'",
+                    (now, next_version, task_id),
+                )
+                sequence = conn.execute("SELECT COALESCE(MAX(event_seq), 0) + 1 FROM agent_task_event WHERE task_id = ?", (task_id,)).fetchone()[0]
+                conn.execute(
+                    "INSERT INTO agent_task_event(event_id, task_id, event_type, status, content, data_json, created_at, event_seq, execution_version) VALUES (?, ?, 'worker_recovered', 'queued', ?, ?, ?, ?, ?)",
+                    (f"evt_recovered_{task_id}_{next_version}", task_id, f"Lease expired for worker {row['worker_id'] or 'unknown'}.", json.dumps({"worker_id": row["worker_id"]}, ensure_ascii=False), now, sequence, next_version),
+                )
+        return [str(row["task_id"]) for row in rows]
 
     def is_task_cancelled(self, task_id: str) -> bool:
         with self._connect() as conn:
@@ -631,7 +830,7 @@ class SQLiteTaskStore:
         with self._connect() as conn:
             rows = conn.execute(
                 """
-                SELECT event_id, task_id, event_type AS type, node, agent, status, content, data_json, created_at AS timestamp
+                SELECT event_id, task_id, event_type AS type, node, agent, status, content, data_json, created_at AS timestamp, event_seq
                 FROM agent_task_event
                 WHERE task_id = ?
                 ORDER BY id ASC
@@ -644,6 +843,9 @@ class SQLiteTaskStore:
             item["data"] = json.loads(item.pop("data_json") or "{}")
             events.append(item)
         return events
+
+    def get_events_after(self, task_id: str, after_seq: int = 0) -> list[dict[str, Any]]:
+        return [event for event in self.get_events(task_id) if int(event.get("event_seq") or 0) > after_seq]
 
     def get_artifacts(self, task_id: str) -> list[dict[str, Any]]:
         with self._connect() as conn:
