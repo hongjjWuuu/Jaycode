@@ -415,6 +415,11 @@ class PgVectorRagStore:
             raise RuntimeError("psycopg is required. Install with: pip install -e \".[vector]\"") from exc
         return psycopg.connect(self.database_url)
 
+    @staticmethod
+    def _timestamp_now() -> datetime:
+        """Use native UTC timestamps for PostgreSQL TIMESTAMPTZ columns."""
+        return datetime.now(timezone.utc)
+
     # 建表
     def _init_schema(self) -> None:
         with self._connect() as conn:
@@ -491,11 +496,28 @@ class PgVectorRagStore:
                     """
                 )
             conn.commit()
+        required_columns = {
+            "rag_document": {"id", "collection", "path", "size", "content_hash", "version", "is_current", "acl_json"},
+            "rag_chunk": {"id", "collection", "chunk_id", "path", "content", "metadata_json", "embedding", "embedding_source", "document_version"},
+            "rag_gold_case": {"case_id", "collection", "question", "expected_chunk_ids_json", "expected_paths_json", "expected_keywords_json", "metadata_json", "enabled"},
+        }
+        with self._connect() as conn:
+            for table, required in required_columns.items():
+                rows = conn.execute(
+                    "SELECT column_name FROM information_schema.columns WHERE table_schema=current_schema() AND table_name=%s",
+                    (table,),
+                ).fetchall()
+                present = {str(row[0]) for row in rows}
+                missing = required - present
+                if missing:
+                    raise RuntimeError(
+                        f"Incompatible PostgreSQL RAG schema for {table}; missing required columns: {', '.join(sorted(missing))}"
+                    )
     
     # 入库（多了向量化步骤）
     def ingest(self, collection: str, documents: list[dict[str, Any]], chunks: list[dict[str, str]]) -> dict[str, int]:
         grouped = _group_chunks(chunks)
-        now = utc_now_iso()
+        now = self._timestamp_now()
         changed_chunks: list[tuple[dict[str, str], int]] = []
         changed_documents = 0
         # 阶段一：逐文档处理（判断是否变化 + 版本管理）
@@ -662,7 +684,7 @@ class PgVectorRagStore:
     def add_note(self, collection: str, path: str, content: str) -> dict[str, str]:
         safe_path = path.strip() or "manual-note"
         chunk_id = f"{safe_path}#note-{_slug(content)[:24]}"
-        now = utc_now_iso()
+        now = self._timestamp_now()
         vector = self.embedding.embed_query(content)
         content_hash = _content_hash([{"content": content}])
         with self._connect() as conn:
@@ -758,7 +780,7 @@ class PgVectorRagStore:
         ]
 
     def save_gold_case(self, case: dict[str, Any]) -> dict[str, Any]:
-        now = utc_now_iso()
+        now = self._timestamp_now()
         case_id = str(case.get("case_id") or f"rag_gold_{hashlib.sha1((case.get('question') or now).encode('utf-8')).hexdigest()[:12]}")
         payload = _normalize_gold_case({**case, "case_id": case_id})
         with self._connect() as conn:
