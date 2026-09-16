@@ -5,7 +5,6 @@ from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
-
 from postgres_test_config import isolated_postgres_url
 
 DATABASE_URL = isolated_postgres_url()

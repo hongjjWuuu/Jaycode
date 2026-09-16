@@ -11,7 +11,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
-from uuid import uuid4
 
 from app.core.config import settings
 from app.persistence.migration_mapping import MAPPING_VERSION, TABLE_MAPPINGS
@@ -283,7 +282,7 @@ def _parse_json(value: Any, column: str) -> Any:
     if isinstance(value, (dict, list)):
         return value
     if not isinstance(value, str):
-        raise ValueError(f"{column} must contain JSON text.")
+        raise TypeError(f"{column} must contain JSON text.")
     try:
         return json.loads(value)
     except json.JSONDecodeError as exc:

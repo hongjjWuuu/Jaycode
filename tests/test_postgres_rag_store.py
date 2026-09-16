@@ -8,7 +8,10 @@ from postgres_test_config import isolated_postgres_url
 from app.persistence.rag_store import PgVectorRagStore
 
 DATABASE_URL = isolated_postgres_url()
-pytestmark = pytest.mark.skipif(not DATABASE_URL, reason="set JAYCODE_TEST_DATABASE_URL to an isolated local test database")
+pytestmark = [
+    pytest.mark.postgres,
+    pytest.mark.skipif(not DATABASE_URL, reason="set JAYCODE_TEST_DATABASE_URL to an isolated local test database"),
+]
 
 
 def test_postgres_rag_document_acl_note_and_gold_case_contract() -> None:

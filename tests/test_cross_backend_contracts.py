@@ -4,12 +4,10 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
-
 from postgres_test_config import isolated_postgres_url
 
 from app.persistence.postgres_store import PostgresTaskStore
 from app.persistence.sqlite_store import SQLiteTaskStore
-
 
 pytestmark = pytest.mark.postgres
 DATABASE_URL = isolated_postgres_url()

@@ -5,16 +5,14 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
-
 from postgres_test_config import isolated_postgres_url
 
 from app.persistence.memory_store import SQLiteMemoryStore
-from app.persistence.migration_mapping import TABLE_MAPPINGS
 from app.persistence.migrate import import_postgres, verify_postgres
+from app.persistence.migration_mapping import TABLE_MAPPINGS
 from app.persistence.postgres_store import PostgresTaskStore
 from app.persistence.rag_store import SQLiteRagStore
 from app.persistence.sqlite_store import SQLiteTaskStore
-
 
 pytestmark = pytest.mark.postgres
 DATABASE_URL = isolated_postgres_url()

@@ -1,6 +1,6 @@
 # P1 PostgreSQL 全域接入与迁移收口计划
 
-> 状态：阶段三已通过；阶段四（SQLite 全量迁移演练与核验）待实施。当前不得切换 PostgreSQL、修改生效 `.env`、导入现有 SQLite 数据或写入现有 PostgreSQL 业务库。
+> 状态：阶段四已通过；阶段五（最终切换前质量门禁）待实施。当前不得切换 PostgreSQL、修改生效 `.env`、导入现有 SQLite 数据或写入现有 PostgreSQL 业务库。
 
 ## 目标与当前基线
 
@@ -163,13 +163,15 @@ $env:JAYCODE_TEST_DATABASE_URL = "<只用于本机隔离 jaycode_test_* 数据�
 - 重复导入、目标冲突、故障注入均不留下部分数据。
 - 演练报告可复现且不含密钥。
 
-### 阶段 4 实施记录（2026-09-16，待真实隔离演练）
+### 阶段 4 实施记录（2026-09-16，已通过）
 
 - `app/persistence/migration_mapping.py` 已建立当前 27 张业务表的严格 SQLite→PostgreSQL 映射清单；未映射表或列、缺失目标字段、无效 JSON 与不兼容 Schema 均会中止。
 - `app/persistence/migrate.py` 已支持显式的隔离 `--check`、`--import-postgres`、`--verify`。阶段四目标只能从 `JAYCODE_MIGRATION_TARGET_URL` 读取，明确拒绝 `DATABASE_URL`、非 loopback 和非 `jaycode_test_*` 数据库。
 - 导入会先初始化版本化目标 Schema、检查业务表为空、写入源快照指纹账本，并在单一事务中完成写入；核验比较映射后逐表行数和规范化行哈希。
 - 已新增成功导入/核验、重复导入拒绝、未知表拒绝及无效 JSON 故障回滚测试，并接入随机 PostgreSQL 测试运行器和 CI PostgreSQL Job。
-- 本记录仅代表代码已实现；尚未对真实业务 SQLite 数据库执行备份、导入或核验，也未修改 `.env`。必须完成真实隔离演练后才可将阶段四标为通过。
+- 2026-09-16 用户普通 PowerShell 运行随机隔离 PostgreSQL 库 `jaycode_test_d5bf7b78209140c996bbba3e3bc8f8c7`，全部测试结果为 `25 passed`，并由运行器自动删除。已实际覆盖成功导入/逐表核验、重复导入保护、未知表拒绝、无效 JSON 的事务回滚，以及此前的 Store、API 与双 Worker 验证。
+- 5 条 warning 均是 FastAPI/Starlette 生命周期 API 弃用提示，不影响阶段四门禁。
+- 本阶段仅使用合成 SQLite 与随机测试库；未对真实业务 SQLite 数据库执行备份、导入或核验，也未修改 `.env`。下一步为阶段五的完整质量门禁汇总；正式数据迁移仍属于阶段六。
 
 ## 阶段 5：最终切换前质量门禁
 

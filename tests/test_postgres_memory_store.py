@@ -8,7 +8,10 @@ from postgres_test_config import isolated_postgres_url
 from app.persistence.postgres_memory_store import PostgresMemoryStore
 
 DATABASE_URL = isolated_postgres_url()
-pytestmark = pytest.mark.skipif(not DATABASE_URL, reason="set JAYCODE_TEST_DATABASE_URL to an isolated local test database")
+pytestmark = [
+    pytest.mark.postgres,
+    pytest.mark.skipif(not DATABASE_URL, reason="set JAYCODE_TEST_DATABASE_URL to an isolated local test database"),
+]
 
 
 def test_postgres_memory_lifecycle_and_duplicate_contract(monkeypatch: pytest.MonkeyPatch) -> None:

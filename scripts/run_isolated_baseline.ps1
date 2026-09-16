@@ -8,12 +8,15 @@ $python = Join-Path $repoRoot ".venv\Scripts\python.exe"
 if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
     throw "Project virtualenv Python was not found."
 }
+if (-not $ReportPath) {
+    $ReportPath = "docs/reports/p1-stage0-baseline-$(Get-Date -Format 'yyyyMMdd-HHmmss').md"
+}
 
 $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("jaycode-test-sqlite-" + [guid]::NewGuid().ToString("N"))
 $ownerFile = "$tempRoot.owner"
 $ownerToken = [guid]::NewGuid().ToString("N")
 $sqlitePath = Join-Path $tempRoot "test.db"
-$report = Join-Path $repoRoot $ReportPath
+$report = if ([System.IO.Path]::IsPathRooted($ReportPath)) { $ReportPath } else { Join-Path $repoRoot $ReportPath }
 $oldSqlitePath = $env:JAYCODE_TEST_SQLITE_PATH
 $oldPgTestUrl = $env:JAYCODE_TEST_DATABASE_URL
 $isolatedEnvNames = @("DATABASE_URL", "PGVECTOR_DATABASE_URL", "JAYCODE_PERSISTENCE_STORE", "JAYCODE_RAG_STORE", "JAYCODE_TEST_MODE", "JAYCODE_TEST_SQLITE_OWNER_TOKEN")
@@ -48,7 +51,7 @@ try {
         $ruffStatus = if ($ruffCode -eq 0 -and $scriptRuffCode -eq 0) { "pass" } else { "fail (app/tests=$ruffCode, scripts=$scriptRuffCode)" }
 
         if ($ruffCode -eq 0 -and $scriptRuffCode -eq 0) {
-            $pytestOutput = (& $python -m pytest -q tests 2>&1 | Out-String).Trim()
+            $pytestOutput = (& $python -m pytest -q tests -m "not postgres" 2>&1 | Out-String).Trim()
             $pytestCode = $LASTEXITCODE
             $pytestStatus = if ($pytestCode -eq 0) { "pass" } else { "fail (exit $pytestCode)" }
         }
@@ -75,7 +78,6 @@ finally {
         ([System.IO.File]::ReadAllText($ownerFile) -ceq $ownerToken)) {
         try {
             Remove-Item -LiteralPath $resolvedTemp -Recurse -Force -ErrorAction Stop
-            Remove-Item -LiteralPath $ownerFile -Force -ErrorAction Stop
         }
         catch {
             Write-Warning "Could not clean this run's isolated SQLite directory; it was preserved: $resolvedTemp"
@@ -85,8 +87,7 @@ finally {
         Write-Warning "Temporary SQLite ownership check failed; directory was preserved."
     }
 
-    if (-not $ReportPath) { $ReportPath = "docs/reports/p1-stage0-baseline-$(Get-Date -Format 'yyyyMMdd-HHmmss').md" }
-    $report = Join-Path $repoRoot $ReportPath
+    $report = if ([System.IO.Path]::IsPathRooted($ReportPath)) { $ReportPath } else { Join-Path $repoRoot $ReportPath }
     if (Test-Path -LiteralPath $report) { throw "Baseline report already exists; refusing to overwrite: $report" }
     $reportDirectory = Split-Path -Parent $report
     New-Item -ItemType Directory -Path $reportDirectory -Force | Out-Null

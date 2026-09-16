@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
-
 
 MAPPING_VERSION = "sqlite-to-postgres-v1"
 
@@ -101,4 +99,3 @@ TABLE_MAPPINGS.update(
         ),
     }
 )
-

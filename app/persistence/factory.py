@@ -101,7 +101,7 @@ def _postgres_stores() -> PersistenceStores:
         task.init_full_schema()
         memory = PostgresMemoryStore(settings.database_url)
         rag = PgVectorRagStore(settings.database_url)
-    except Exception as exc:  # noqa: BLE001 - persistence must fail closed at the backend boundary
+    except Exception as exc:
         raise PersistenceConfigurationError("PostgreSQL persistence startup check failed.") from exc
     return PersistenceStores(
         task=task,
