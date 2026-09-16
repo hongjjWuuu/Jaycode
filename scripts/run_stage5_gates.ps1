@@ -83,7 +83,17 @@ try {
     }
     Invoke-Gate "GitHub Actions quality and PostgreSQL jobs" {
         if (-not $GitHubRunId) { throw "GitHubRunId is required; local checks alone cannot approve stage six." }
-        $run = (& gh run view $GitHubRunId --json status,conclusion,jobs | ConvertFrom-Json)
+        $ghCommand = Get-Command gh -ErrorAction SilentlyContinue
+        $ghExecutable = if ($ghCommand) {
+            $ghCommand.Source
+        }
+        else {
+            Join-Path $env:LOCALAPPDATA "Programs\GitHub CLI\bin\gh.exe"
+        }
+        if (-not (Test-Path -LiteralPath $ghExecutable -PathType Leaf)) {
+            throw "GitHub CLI was not found. Open a new PowerShell session after installing gh or set its user PATH."
+        }
+        $run = (& $ghExecutable run view $GitHubRunId --json status,conclusion,jobs | ConvertFrom-Json)
         $required = @("quality", "postgres-store")
         $completed = $run.status -eq "completed" -and $run.conclusion -eq "success"
         $jobs = @($run.jobs | Where-Object { $_.name -in $required })
