@@ -341,9 +341,9 @@ def test_postgres_store_factory_fails_closed_instead_of_mixing_sqlite(monkeypatc
         try:
             get_persistence_stores()
         except RuntimeError as exc:
-            assert "refusing mixed persistence" in str(exc).lower()
+            assert "startup check failed" in str(exc).lower()
         else:
-            raise AssertionError("partial PostgreSQL wiring must fail closed")
+            raise AssertionError("unreachable PostgreSQL must fail closed")
     finally:
         get_persistence_stores.cache_clear()
 
@@ -374,16 +374,21 @@ def test_llm_monitor_emits_dimensioned_metrics_and_threshold_alerts() -> None:
     assert "sensitive prompt" not in rendered
 
 
-def test_postgres_selection_fails_closed_until_all_domains_are_wired(monkeypatch) -> None:
+def test_postgres_selection_fails_closed_when_backend_cannot_connect(monkeypatch) -> None:
+    from app.persistence.factory import get_persistence_stores
+
     monkeypatch.setattr(settings, "jaycode_persistence_store", "postgres")
     monkeypatch.setattr(settings, "database_url", "postgresql://user@127.0.0.1:5432/test")
     monkeypatch.setattr(settings, "pgvector_database_url", "")
+    get_persistence_stores.cache_clear()
     try:
         validate_security_configuration()
     except RuntimeError as exc:
-        assert "refusing mixed" in str(exc)
+        assert "startup check failed" in str(exc).lower()
     else:
-        raise AssertionError("PostgreSQL must not silently leave application domains on SQLite")
+        raise AssertionError("PostgreSQL must not silently fall back to SQLite")
+    finally:
+        get_persistence_stores.cache_clear()
 
 
 def test_postgres_urls_must_target_the_same_database() -> None:

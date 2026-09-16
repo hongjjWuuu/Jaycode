@@ -61,10 +61,10 @@ def _run() -> int:
         created = True
         environment = os.environ.copy()
         environment["JAYCODE_TEST_DATABASE_URL"] = test_url
-        environment["DATABASE_URL"] = ""
-        environment["PGVECTOR_DATABASE_URL"] = ""
-        environment["JAYCODE_PERSISTENCE_STORE"] = "sqlite"
-        environment["JAYCODE_RAG_STORE"] = "sqlite"
+        environment["DATABASE_URL"] = test_url
+        environment["PGVECTOR_DATABASE_URL"] = test_url
+        environment["JAYCODE_PERSISTENCE_STORE"] = "postgres"
+        environment["JAYCODE_RAG_STORE"] = "pgvector"
         environment["JAYCODE_TEST_MODE"] = "1"
         command = [
             sys.executable,
@@ -75,6 +75,9 @@ def _run() -> int:
             "tests/test_postgres_memory_store.py",
             "tests/test_postgres_rag_store.py",
             "tests/test_postgres_test_config.py",
+            "tests/test_postgres_migrations.py",
+            "tests/test_cross_backend_contracts.py",
+            "tests/test_postgres_e2e.py",
         ]
         result = subprocess.run(command, cwd=REPO_ROOT, env=environment, capture_output=True, text=True, check=False)
         exit_code = result.returncode

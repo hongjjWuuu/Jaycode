@@ -1,6 +1,6 @@
 # P1 PostgreSQL 全域接入与迁移收口计划
 
-> 状态：待执行。当前不得切换 PostgreSQL、修改生效 `.env`、导入现有 SQLite 数据或写入现有 PostgreSQL 业务库。
+> 状态：阶段三已通过；阶段四（SQLite 全量迁移演练与核验）待实施。当前不得切换 PostgreSQL、修改生效 `.env`、导入现有 SQLite 数据或写入现有 PostgreSQL 业务库。
 
 ## 目标与当前基线
 
@@ -8,12 +8,12 @@
 
 当前可确认的基线：
 
-- `app/persistence/factory.py` 的 `PersistenceStores` 目前只有 `task`、`memory`、`rag` 三个入口；PostgreSQL 分支明确 fail-closed。
+- `app/persistence/factory.py` 的 `PersistenceStores` 已暴露 12 个领域入口；PostgreSQL 仍只允许在隔离测试数据库中验证，生产配置保持 SQLite。
 - `app/persistence/postgres_store.py` 已有部分领域方法和 schema，但尚未证明所有业务调用都通过统一 Store，也没有全域共用契约。
 - `app/persistence/rag_store.py` 有独立 SQLite/PgVector 实现；统一工厂和 PostgreSQL 主连接的一致性仍需端到端验证。
 - `app/persistence/migrate.py` 可做 SQLite 一致性备份、清单和全表 JSON 导出；`--import-postgres` 未实现，`--verify` 不比较源/目标记录集。
 - 新增 PostgreSQL 集成测试须使用 `JAYCODE_TEST_DATABASE_URL`，主机限 loopback 且数据库名必须以 `jaycode_test_` 开头。不得用应用 `DATABASE_URL` 代替。
-- 最近一次执行环境中 `.venv` 无法启动，MSYS Python 缺 pytest/ruff；本轮真实 PG、pytest 与 Ruff 未验证。此环境问题须在第一阶段解决或切换到用户普通 PowerShell 的有效项目环境。
+- 用户普通 PowerShell 已确认标准 Python 3.13.15 与项目 `.venv` 可用；Codex 受限执行环境不能代表本机环境。真实 PostgreSQL 验证必须由隔离测试运行器在用户终端执行。
 
 ## 不可突破的安全边界
 
@@ -67,7 +67,7 @@
 
 ### 阶段 1 实施记录（2026-09-16）
 
-- 已新增 `app/persistence/contracts.py`：定义 12 个领域的类型契约、SQLite 表映射、方法清单及 PostgreSQL 支持状态。当前所有领域均为 `implemented_unverified`，因此 PostgreSQL 继续拒绝启动。
+- 已新增 `app/persistence/contracts.py`：定义 12 个领域的类型契约、SQLite 表映射、方法清单及 PostgreSQL 支持状态。
 - `PersistenceStores` 已显式暴露全部 12 个领域；SQLite 使用同一路径构建 Task、Memory、RAG，并让兼容领域共享 Task 适配器实例。
 - API、Worker、Supervisor、Benchmark、Skill、MCP、Marketplace、LLM、Workflow 与安全审计已改为在实际调用时获取 `PersistenceStores` 的对应领域入口；生产模块不得再导入工厂代理或 SQLite 全局单例。
 - PgVector/SQLite RAG 均暴露 `source`、`embed_documents`、`embed_query`，维持统一公开契约；这不会改变 SQLite 的现有检索实现。
@@ -107,7 +107,7 @@
 - CI PostgreSQL Job 已改为显式传递 `JAYCODE_TEST_DATABASE_URL`，并扩展执行 Task、Memory、RAG 与迁移测试；不会读取应用 `DATABASE_URL` 作为测试目标。
 - 本机回归：`ruff check app tests` 通过；`pytest -q tests` 为 `57 passed, 9 skipped`。9 项跳过均为未设置隔离 PostgreSQL 测试 URL，未计为真实 PostgreSQL 契约通过。
 - 2026-09-16 真实隔离 PostgreSQL 验证：`scripts/run_postgres_contracts.py` 自动创建随机 `jaycode_test_437e4eb5a92c4d7f99e10eb3de504b7a`，全部 `16 passed` 后自动删除。12 个领域均已提升为 `verified_stage2`，可进入阶段三共享契约与 API/Worker E2E。
-- PostgreSQL 工厂仍保持 fail-closed：`verified_stage2` 不等同于可启用；必须完成阶段三 API/Worker E2E 后才可提升为 `supported`。本阶段未修改 `.env` 或迁移业务数据。
+- 本阶段未修改 `.env` 或迁移业务数据。
 
 ## 阶段 3：共用契约与 PostgreSQL API/Worker E2E
 
@@ -134,6 +134,15 @@ $env:JAYCODE_TEST_DATABASE_URL = "<只用于本机隔离 jaycode_test_* 数据�
 - SQLite 与 PG 同一契约全过；API/Worker E2E 全过；两 Worker 无重复领取/丢失。
 - P0 认证/RBAC、Marketplace、MCP、审计测试全过。
 - 失败注入及连接失败测试通过。
+
+### 阶段 3 实施记录（2026-09-16，已通过）
+
+- 工厂已改为在全部领域标记为 `supported` 后构建完整 PostgreSQL Store bundle，并在应用启动检查中验证连接、Schema、pgvector 与主库/RAG 目标一致性；连接或初始化失败会明确失败，不会回退 SQLite。
+- 已新增 PostgreSQL E2E 测试，覆盖 FastAPI `/health`、`/ready`、任务入队、读取与取消，以及两个独立进程对合成任务的唯一领取和完成写入。
+- `scripts/run_postgres_contracts.py` 现会为子测试进程注入同一个随机 `jaycode_test_*` 主库与 RAG URL，并运行迁移、全域 Store 与 E2E 测试；它只删除本次成功创建的随机库。
+- 2026-09-16 用户普通 PowerShell 运行隔离测试脚本：随机库 `jaycode_test_9574c30fd3424acd94cb569751e698fa` 执行完成后得到 `22 passed`，并由脚本自动删除。覆盖全域 PostgreSQL Store、迁移、SQLite/PostgreSQL 共享契约、API 入队/读取/取消/审核和双独立 Worker 唯一领取、checkpoint 恢复、租约恢复与心跳。
+- 5 条 warning 均为 FastAPI/Starlette 生命周期函数 API 的弃用提示，不影响本阶段结果；它们应在后续 P2 生命周期重构中处理。
+- 阶段三门禁已通过，但这只证明隔离 PostgreSQL 可运行；不得据此修改 `.env`、迁移现有 `data/dev_agent_studio.db` 或切换正式后端。下一步为阶段四的全量迁移工具、冲突保护和数据核验演练。
 
 ## 阶段 4：SQLite 全量迁移工具与隔离演练
 

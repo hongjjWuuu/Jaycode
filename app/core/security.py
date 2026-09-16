@@ -71,7 +71,13 @@ def validate_security_configuration() -> None:
         raise RuntimeError("JAYCODE_PERSISTENCE_STORE=postgres requires DATABASE_URL")
     if settings.jaycode_persistence_store.lower() == "postgres":
         validate_matching_postgres_targets(settings.database_url, settings.pgvector_database_url)
-        raise RuntimeError("PostgreSQL core adapter is not wired to every application domain; refusing mixed SQLite/PostgreSQL persistence.")
+        # The factory verifies that every persistence domain is implemented and
+        # reachable.  Do this at startup rather than leaving PostgreSQL in a
+        # permanent placeholder fail-closed state.
+        stores = get_persistence_stores()
+        if stores.backend != "postgres":
+            raise RuntimeError("PostgreSQL configuration resolved to a non-PostgreSQL persistence backend.")
+        stores.ping()
 
 
 def _auth_error(error_code: str, message: str, request_id: str, status_code: int) -> JSONResponse:

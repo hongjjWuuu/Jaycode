@@ -22,13 +22,13 @@ def test_sqlite_bundle_exposes_every_declared_domain_and_contract_method() -> No
         assert not missing, f"{domain} is missing SQLite contract methods: {missing}"
 
 
-def test_postgres_factory_refuses_incomplete_domain_matrix(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_postgres_factory_fails_closed_when_connection_is_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "jaycode_persistence_store", "postgres")
-    monkeypatch.setattr(settings, "database_url", "postgresql://localhost/jaycode_stage1")
+    monkeypatch.setattr(settings, "database_url", "postgresql://127.0.0.1:1/jaycode_test_unavailable")
     monkeypatch.setattr(settings, "pgvector_database_url", "")
     get_persistence_stores.cache_clear()
     try:
-        with pytest.raises(PersistenceConfigurationError, match="Not activation-ready domains: task"):
+        with pytest.raises(PersistenceConfigurationError, match="startup check failed"):
             get_persistence_stores()
     finally:
         get_persistence_stores.cache_clear()

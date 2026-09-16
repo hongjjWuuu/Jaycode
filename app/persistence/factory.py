@@ -82,6 +82,9 @@ def _sqlite_stores() -> PersistenceStores:
 
 def _postgres_stores() -> PersistenceStores:
     from app.persistence.postgres_config import validate_matching_postgres_targets
+    from app.persistence.postgres_memory_store import PostgresMemoryStore
+    from app.persistence.postgres_store import PostgresTaskStore
+    from app.persistence.rag_store import PgVectorRagStore
 
     if not settings.database_url:
         raise PersistenceConfigurationError("JAYCODE_PERSISTENCE_STORE=postgres requires DATABASE_URL")
@@ -93,8 +96,28 @@ def _postgres_stores() -> PersistenceStores:
             "PostgreSQL persistence is not ready; refusing mixed persistence. "
             f"Not activation-ready domains: {details}."
         )
-    # Stage 2 enables construction after each domain has a verified contract.
-    raise PersistenceConfigurationError("PostgreSQL persistence schema is not verified for activation.")
+    try:
+        task = PostgresTaskStore(settings.database_url)
+        task.init_full_schema()
+        memory = PostgresMemoryStore(settings.database_url)
+        rag = PgVectorRagStore(settings.database_url)
+    except Exception as exc:  # noqa: BLE001 - persistence must fail closed at the backend boundary
+        raise PersistenceConfigurationError("PostgreSQL persistence startup check failed.") from exc
+    return PersistenceStores(
+        task=task,
+        workflow=task,
+        review=task,
+        skill=task,
+        mcp=task,
+        marketplace=task,
+        audit=task,
+        memory=memory,
+        llm=task,
+        prompt=task,
+        benchmark=task,
+        rag=rag,
+        backend="postgres",
+    )
 
 
 @lru_cache(maxsize=1)

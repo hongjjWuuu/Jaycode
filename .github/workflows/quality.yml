@@ -59,4 +59,4 @@ jobs:
           python-version: "3.13"
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e ".[dev,vector]"
-      - run: pytest -q tests/test_postgres_store.py tests/test_postgres_memory_store.py tests/test_postgres_rag_store.py tests/test_postgres_migrations.py
+      - run: pytest -q tests/test_postgres_store.py tests/test_postgres_memory_store.py tests/test_postgres_rag_store.py tests/test_postgres_migrations.py tests/test_cross_backend_contracts.py tests/test_postgres_e2e.py
