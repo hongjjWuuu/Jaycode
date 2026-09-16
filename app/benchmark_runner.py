@@ -12,7 +12,7 @@ from uuid import uuid4
 from app.graphs.collaboration_runner import run_collaboration_task
 from app.graphs.workflow_compiler import run_compiled_workflow
 from app.harness.events import utc_now_iso
-from app.persistence.factory import rag_store, task_store
+from app.persistence.factory import get_persistence_stores
 from app.providers.llm_provider import llm_provider
 from app.providers.mcp_provider import mcp_provider
 
@@ -73,7 +73,7 @@ def run_mcp_benchmark(payload: dict[str, Any]) -> dict[str, Any]:
         "case_count": len(cases),
         "cases": cases,
     }
-    task_store.create_benchmark_run(
+    get_persistence_stores().benchmark.create_benchmark_run(
         run_id=run_id,
         name=str(payload.get("name") or "MCP Tool Benchmark"),
         benchmark_type="mcp",
@@ -87,7 +87,7 @@ def run_mcp_benchmark(payload: dict[str, Any]) -> dict[str, Any]:
 
     summary = _summarize_benchmark(results, cases, iterations)
     status = "completed" if summary["failed"] == 0 else "completed_with_failures"
-    return task_store.finish_benchmark_run(run_id, status, summary)
+    return get_persistence_stores().benchmark.finish_benchmark_run(run_id, status, summary)
 
 
 def default_llm_benchmark_cases() -> list[dict[str, Any]]:
@@ -230,7 +230,7 @@ def _run_generic_benchmark(
         "case_count": len(cases),
         "cases": cases,
     }
-    task_store.create_benchmark_run(
+    get_persistence_stores().benchmark.create_benchmark_run(
         run_id=run_id,
         name=str(payload.get("name") or f"{benchmark_type.upper()} Benchmark"),
         benchmark_type=benchmark_type,
@@ -242,7 +242,7 @@ def _run_generic_benchmark(
             results.append(case_runner(run_id, case, iteration, config["agent_code"]))
     summary = summarizer(results, cases, iterations)
     status = "completed" if summary["failed"] == 0 else "completed_with_failures"
-    return task_store.finish_benchmark_run(run_id, status, summary)
+    return get_persistence_stores().benchmark.finish_benchmark_run(run_id, status, summary)
 
 
 def _run_single_mcp_case(run_id: str, case: dict[str, Any], iteration: int, agent_code: str) -> dict[str, Any]:
@@ -278,7 +278,7 @@ def _run_single_mcp_case(run_id: str, case: dict[str, Any], iteration: int, agen
         "output": _compact_json(output),
         "created_at": utc_now_iso(),
     }
-    return task_store.append_benchmark_result(result)
+    return get_persistence_stores().benchmark.append_benchmark_result(result)
 
 
 def _run_single_llm_case(run_id: str, case: dict[str, Any], iteration: int, agent_code: str) -> dict[str, Any]:
@@ -334,7 +334,7 @@ def _run_single_rag_case(run_id: str, case: dict[str, Any], iteration: int, agen
         collection = str(args.get("collection") or "default")
         question = str(args.get("question") or "")
         limit = max(1, min(20, int(args.get("limit") or 5)))
-        results = rag_store.query(collection, question, limit, actor_id=str(args.get("actor_id") or agent_code or "benchmark_runner"))
+        results = get_persistence_stores().rag.query(collection, question, limit, actor_id=str(args.get("actor_id") or agent_code or "benchmark_runner"))
         expected_paths = [str(item).lower() for item in args.get("expected_paths", [])]
         expected_chunk_ids = [str(item) for item in args.get("expected_chunk_ids", [])]
         expected_keywords = [str(item).lower() for item in args.get("expected_keywords", [])]
@@ -492,7 +492,7 @@ def _append_case_result(
         "output": _compact_json(output),
         "created_at": utc_now_iso(),
     }
-    return task_store.append_benchmark_result(result)
+    return get_persistence_stores().benchmark.append_benchmark_result(result)
 
 
 def _summarize_benchmark(results: list[dict[str, Any]], cases: list[dict[str, Any]], iterations: int) -> dict[str, Any]:
@@ -699,10 +699,11 @@ def _rag_source_quality(results: list[dict[str, Any]], keyword_hits: int, expect
 
 
 def _rag_gold_cases_for_benchmark(payload: dict[str, Any]) -> list[dict[str, Any]]:
-    if not hasattr(rag_store, "list_gold_cases"):
+    rag = get_persistence_stores().rag
+    if not hasattr(rag, "list_gold_cases"):
         return []
     collection = str(payload.get("collection") or "").strip() or None
-    gold_cases = rag_store.list_gold_cases(collection, include_disabled=False)
+    gold_cases = rag.list_gold_cases(collection, include_disabled=False)
     return [
         {
             "case_id": case["case_id"],

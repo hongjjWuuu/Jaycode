@@ -10,7 +10,7 @@ from app.core.llm_monitor import llm_monitor
 from app.core.observability import configure_json_logging, metrics
 from app.core.security import security_middleware, validate_security_configuration
 from app.harness.supervisor import worker_supervisor
-from app.persistence.factory import get_persistence_stores, task_store
+from app.persistence.factory import get_persistence_stores
 
 # 创建 FastAPI 应用
 # 挂载 API 路由
@@ -42,14 +42,14 @@ def ready() -> dict[str, object]:
 
 @app.get("/metrics", include_in_schema=False)
 def prometheus_metrics() -> PlainTextResponse:
-    tasks = task_store.list_tasks(limit=1000)
+    tasks = get_persistence_stores().task.list_tasks(limit=1000)
     for status in ("queued", "running", "completed", "failed", "cancelled"):
         metrics.set("jaycode_tasks", sum(task.get("status") == status for task in tasks), {"status": status})
-    workers = task_store.list_workers()
+    workers = get_persistence_stores().task.list_workers()
     for status in ("running", "stopped"):
         metrics.set("jaycode_workers_registered", sum(worker.get("status") == status for worker in workers), {"status": status})
     try:
-        traces = task_store.list_llm_traces(limit=1000)
+        traces = get_persistence_stores().llm.list_llm_traces(limit=1000)
         llm_monitor.collect(traces)
     except Exception:  # noqa: BLE001 - metrics must not take the API down
         metrics.inc("jaycode_metrics_collection_errors_total")

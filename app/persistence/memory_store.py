@@ -12,6 +12,7 @@ from typing import Any
 from uuid import uuid4
 
 from app.harness.events import BEIJING_TIME_FORMAT, BEIJING_TZ, utc_now_iso
+from app.persistence.sqlite_path import resolve_sqlite_path
 from app.providers.llm_provider import llm_provider
 from app.schemas.llm import MemoryExtractionResponse
 
@@ -25,8 +26,8 @@ class SQLiteMemoryStore:
     # 设定 SQLite 数据库路径
     # 自动创建父目录
     # 立刻初始化表结构
-    def __init__(self, db_path: str | Path = "data/dev_agent_studio.db"):
-        self.db_path = Path(db_path)
+    def __init__(self, db_path: str | Path | None = None):
+        self.db_path = resolve_sqlite_path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_schema()
 

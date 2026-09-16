@@ -51,7 +51,7 @@ jobs:
           --health-timeout 5s
           --health-retries 12
     env:
-      DATABASE_URL: postgresql://jaycode:jaycode-ci@localhost:5432/jaycode_test
+      JAYCODE_TEST_DATABASE_URL: postgresql://jaycode:jaycode-ci@localhost:5432/jaycode_test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -59,4 +59,4 @@ jobs:
           python-version: "3.13"
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e ".[dev,vector]"
-      - run: pytest -q tests/test_postgres_store.py
+      - run: pytest -q tests/test_postgres_store.py tests/test_postgres_memory_store.py tests/test_postgres_rag_store.py tests/test_postgres_migrations.py

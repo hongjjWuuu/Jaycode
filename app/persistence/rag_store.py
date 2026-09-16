@@ -7,18 +7,20 @@ import os
 import re
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 from app.harness.events import utc_now_iso
+from app.persistence.sqlite_path import resolve_sqlite_path
 from app.providers.llm_provider import llm_provider
 from app.schemas.llm import RerankResponse
 
 
 class SQLiteRagStore:
-    def __init__(self, db_path: str | Path = "data/dev_agent_studio.db"):
-        self.db_path = Path(db_path)
+    def __init__(self, db_path: str | Path | None = None):
+        self.db_path = resolve_sqlite_path(db_path)
+        self.embedding = EmbeddingProvider(int(_config().get("JAYCODE_EMBEDDING_DIM", "1536") or 1536))
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_schema()
 
@@ -39,7 +41,8 @@ class SQLiteRagStore:
         finally:
             conn.close()  # 自动关闭
 
-    # 建表
+    # Legacy local DDL retained temporarily for schema comparison only. New
+    # instances must use the unified versioned migration entry point below.
     def _init_schema(self) -> None:
         with self._connection() as conn:
             # 建基础表
@@ -312,6 +315,18 @@ class SQLiteRagStore:
             "reranker": _config().get("JAYCODE_RAG_RERANKER", "off"),
         }
 
+    def source(self) -> str:
+        """Return the embedding source for SQLite/PostgreSQL API parity."""
+        return self.embedding.source
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        """Expose the configured embedding provider without changing SQLite retrieval."""
+        return self.embedding.embed_documents(texts)
+
+    def embed_query(self, text: str) -> list[float]:
+        """Expose the configured query embedding provider for contract parity."""
+        return self.embedding.embed_query(text)
+
     def _slug(self, text: str) -> str:
         slug = re.sub(r"[^A-Za-z0-9_-]+", "-", text.strip().lower()).strip("-")
         return slug or "note"
@@ -418,10 +433,16 @@ class PgVectorRagStore:
     @staticmethod
     def _timestamp_now() -> datetime:
         """Use native UTC timestamps for PostgreSQL TIMESTAMPTZ columns."""
-        return datetime.now(timezone.utc)
+        return datetime.now(UTC)
 
-    # 建表
     def _init_schema(self) -> None:
+        """Use the shared versioned PostgreSQL schema migration entry point."""
+        from app.persistence.postgres_store import PostgresTaskStore
+
+        PostgresTaskStore(self.database_url).init_full_schema()
+
+    # Legacy local DDL is retained only for schema comparison during Stage 2.
+    def _legacy_init_schema(self) -> None:
         with self._connect() as conn:
             with conn.cursor() as cur:
                 # 创建 pgvector 扩展
@@ -827,6 +848,18 @@ class PgVectorRagStore:
                 removed = cur.rowcount
             conn.commit()
         return bool(removed)
+
+    def source(self) -> str:
+        """Expose the embedding source with the same public API as SQLite RAG."""
+        return self.embedding.source
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        """Embed documents through the configured provider for contract parity."""
+        return self.embedding.embed_documents(texts)
+
+    def embed_query(self, text: str) -> list[float]:
+        """Embed one query through the configured provider for contract parity."""
+        return self.embedding.embed_query(text)
 
     def status(self) -> dict[str, Any]:
         return {

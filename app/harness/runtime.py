@@ -10,7 +10,7 @@ from typing import Any
 from app.core.config import settings
 from app.core.security import execution_auth_context
 from app.harness.context import AgentExecutionContext
-from app.persistence.factory import task_store
+from app.persistence.factory import get_persistence_stores
 
 GraphRunner = Callable[[dict[str, Any]], dict[str, Any]]
 
@@ -35,7 +35,7 @@ class HarnessRuntime:
         context.variables.setdefault("request_id", auth_context.request_id)
         context.variables.setdefault("actor_id", auth_context.actor_id)
         context.variables.setdefault("role", auth_context.role)
-        existing = task_store.create_task(context.task_id, goal, project_path, "queued", {
+        existing = get_persistence_stores().task.create_task(context.task_id, goal, project_path, "queued", {
             "request_id": auth_context.request_id,
             "actor_id": auth_context.actor_id,
             "role": auth_context.role,
@@ -47,7 +47,7 @@ class HarnessRuntime:
         else:
             context.status = "queued"
             event = context.events.emit(context.task_id, "task", "任务已加入队列", status="queued")
-            task_store.append_event(event.to_dict())
+            get_persistence_stores().task.append_event(event.to_dict())
         return context
 
     def run_graph_async(self, context: AgentExecutionContext, graph_runner: GraphRunner, input_state: dict[str, Any]) -> Future[dict[str, Any]]:
@@ -55,7 +55,7 @@ class HarnessRuntime:
         self.futures[context.task_id] = future
         def timeout_guard() -> None:
             if not future.done():
-                task_store.update_task(context.task_id, "failed")
+                get_persistence_stores().task.update_task(context.task_id, "failed")
         timer = threading.Timer(max(1, settings.jaycode_task_max_runtime_seconds), timeout_guard)
         timer.daemon = True
         timer.start()
@@ -82,23 +82,23 @@ class HarnessRuntime:
             process.terminate()
             process.join(timeout=1)
             cancelled = True
-        persisted = task_store.cancel_task(task_id)
-        return cancelled or persisted or task_store.is_task_cancelled(task_id)
+        persisted = get_persistence_stores().task.cancel_task(task_id)
+        return cancelled or persisted or get_persistence_stores().task.is_task_cancelled(task_id)
 
     # 运行并治理
     def run_graph(self, context: AgentExecutionContext, graph_runner: GraphRunner, input_state: dict[str, Any]) -> dict[str, Any]:
         # 1. 更新任务状态为 running
         context.status = "running"
-        task_store.update_task(context.task_id, "running")
+        get_persistence_stores().task.update_task(context.task_id, "running")
         # 2. 记录开始事件
         event = context.events.emit(context.task_id, "task", "任务开始执行", status="running")
-        task_store.append_event(event.to_dict())
+        get_persistence_stores().task.append_event(event.to_dict())
         try:
-            if task_store.is_task_cancelled(context.task_id) or task_store.is_task_failed(context.task_id):
+            if get_persistence_stores().task.is_task_cancelled(context.task_id) or get_persistence_stores().task.is_task_failed(context.task_id):
                 return {"task_id": context.task_id, "status": "cancelled", "events": context.events.to_list(), "result": {}}
             # 3. 真正跑图
             result = graph_runner({**input_state, "task_id": context.task_id, "events": context.events.to_list()})
-            if task_store.is_task_cancelled(context.task_id) or task_store.is_task_failed(context.task_id):
+            if get_persistence_stores().task.is_task_cancelled(context.task_id) or get_persistence_stores().task.is_task_failed(context.task_id):
                 context.status = "cancelled"
                 return {"task_id": context.task_id, "status": "cancelled", "events": context.events.to_list(), "result": {}}
             # 4. 提取结果
@@ -121,7 +121,7 @@ class HarnessRuntime:
             final_message = "等待人工审核" if context.status == "waiting_review" else "任务执行完成"
             event = context.events.emit(context.task_id, "task", final_message, status=context.status)
             all_events = [graph_event for graph_event in graph_events if graph_event.get("task_id")] + [event.to_dict()]
-            task_store.save_task_bundle(context.task_id, context.status, final_report, artifacts, all_events)
+            get_persistence_stores().task.save_task_bundle(context.task_id, context.status, final_report, artifacts, all_events)
             combined_events = context.events.to_list()[:-1] + graph_events + [event.to_dict()]
             return {
                 "task_id": context.task_id,
@@ -134,7 +134,7 @@ class HarnessRuntime:
 
             context.status = "failed"
             event = context.events.emit(context.task_id, "error", str(exc), status="failed")
-            task_store.save_task_bundle(
+            get_persistence_stores().task.save_task_bundle(
                 context.task_id,
                 "failed",
                 None,
@@ -151,10 +151,10 @@ harness_runtime = HarnessRuntime()
 
 def _process_entry(task_id: str, graph_runner: GraphRunner) -> None:
     worker_id = f"pid-{os.getpid()}"
-    record = task_store.claim_task(task_id, worker_id)
+    record = get_persistence_stores().task.claim_task(task_id, worker_id)
     if not record:
         return
-    variables = task_store.get_task_input(task_id)
+    variables = get_persistence_stores().task.get_task_input(task_id)
     variables.update({
         "request_id": record.get("request_id"),
         "actor_id": record.get("actor_id") or "system-agent",

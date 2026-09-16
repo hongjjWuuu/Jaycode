@@ -13,7 +13,13 @@ from contextlib import contextmanager
 from typing import Any
 from uuid import uuid4
 
+from app.core.config import settings
 from app.harness.events import utc_now_iso
+from app.persistence.postgres_migrations import (
+    PostgresMigration,
+    apply_postgres_migrations,
+    assert_pgvector_available,
+)
 
 
 def _postgres_timestamp(value: Any) -> Any:
@@ -99,10 +105,8 @@ class PostgresTaskStore:
                 restart_count INTEGER NOT NULL DEFAULT 0
             )""",
         )
-        with self.connection() as conn, conn.cursor() as cur:
-            for statement in statements:
-                cur.execute(statement)
-            cur.execute("INSERT INTO jaycode_schema_version(version) VALUES (1) ON CONFLICT(version) DO NOTHING")
+        with self.connection() as conn:
+            apply_postgres_migrations(conn, (PostgresMigration(1, "core-task-audit-worker", statements),))
 
     def init_full_schema(self) -> None:
         """Create the remaining persistence-domain tables idempotently.
@@ -275,16 +279,42 @@ class PostgresTaskStore:
             "ALTER TABLE benchmark_result ADD COLUMN IF NOT EXISTS error_message TEXT",
             "ALTER TABLE benchmark_result ADD COLUMN IF NOT EXISTS input_json JSONB NOT NULL DEFAULT '{}'::jsonb",
             "ALTER TABLE benchmark_result ADD COLUMN IF NOT EXISTS output_json JSONB NOT NULL DEFAULT '{}'::jsonb",
+            """CREATE TABLE IF NOT EXISTS rag_document (
+                id BIGSERIAL PRIMARY KEY, collection TEXT NOT NULL, path TEXT NOT NULL,
+                size INTEGER, created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                content_hash TEXT, version INTEGER NOT NULL DEFAULT 1,
+                is_current BOOLEAN NOT NULL DEFAULT TRUE, valid_to TIMESTAMPTZ,
+                acl_json JSONB NOT NULL DEFAULT '["*"]'::jsonb
+            )""",
+            f"""CREATE TABLE IF NOT EXISTS rag_chunk (
+                id BIGSERIAL PRIMARY KEY, collection TEXT NOT NULL, chunk_id TEXT NOT NULL,
+                path TEXT NOT NULL, content TEXT NOT NULL,
+                metadata_json JSONB NOT NULL DEFAULT '{{}}'::jsonb,
+                embedding vector({settings.jaycode_embedding_dim}) NOT NULL,
+                embedding_source TEXT NOT NULL, document_version INTEGER NOT NULL DEFAULT 1,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )""",
+            """CREATE TABLE IF NOT EXISTS rag_gold_case (
+                case_id TEXT PRIMARY KEY, collection TEXT NOT NULL, question TEXT NOT NULL,
+                expected_chunk_ids_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+                expected_paths_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+                expected_keywords_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+                metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+                enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )""",
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_rag_document_version ON rag_document(collection, path, version)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_rag_chunk_version ON rag_chunk(collection, chunk_id, document_version)",
             "CREATE INDEX IF NOT EXISTS idx_pg_mcp_call_request ON mcp_tool_call_log(request_id, created_at)",
             "CREATE INDEX IF NOT EXISTS idx_pg_memory_scope ON memory_record(scope, expires_at)",
             "CREATE INDEX IF NOT EXISTS idx_pg_llm_request ON llm_call_trace(request_id, created_at)",
             "CREATE INDEX IF NOT EXISTS idx_pg_rag_document_collection ON rag_document(collection, path)",
             "CREATE INDEX IF NOT EXISTS idx_pg_skill_execution_task ON skill_execution_log(task_id, created_at)",
         )
-        with self.connection() as conn, conn.cursor() as cur:
-            for statement in statements:
-                cur.execute(statement)
-            cur.execute("INSERT INTO jaycode_schema_version(version) VALUES (2) ON CONFLICT(version) DO NOTHING")
+        with self.connection() as conn:
+            assert_pgvector_available(conn)
+            apply_postgres_migrations(conn, (PostgresMigration(2, "all-domain-schema", statements),))
 
     def save_audit(self, record: dict[str, Any]) -> None:
         audit = {"audit_id": record.get("audit_id") or f"audit_{uuid4().hex}", **record}

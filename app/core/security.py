@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse
 
 from app.core.config import settings
 from app.core.observability import metrics
-from app.persistence.factory import task_store
+from app.persistence.factory import get_persistence_stores
 from app.persistence.postgres_config import validate_matching_postgres_targets
 
 
@@ -139,7 +139,7 @@ def _action_for_request(method: str, path: str) -> tuple[str, str, str]:
 
 def _audit(context: AuthContext, method: str, path: str, status: str, metadata: dict[str, Any] | None = None) -> None:
     action, resource_type, resource_id = _action_for_request(method, path)
-    task_store.save_security_audit(
+    get_persistence_stores().audit.save_security_audit(
         {
             "request_id": context.request_id,
             "actor_id": context.actor_id,
@@ -155,7 +155,7 @@ def _audit(context: AuthContext, method: str, path: str, status: str, metadata: 
 
 def audit_action(action: str, resource_type: str, resource_id: str = "", status: str = "completed", metadata: dict[str, Any] | None = None) -> None:
     context = execution_auth_context()
-    task_store.save_security_audit(
+    get_persistence_stores().audit.save_security_audit(
         {
             "request_id": context.request_id,
             "actor_id": context.actor_id,

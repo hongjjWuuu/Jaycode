@@ -15,7 +15,7 @@ from app.agents.project_tools import EXCLUDED_DIRS
 from app.core.config import settings
 from app.core.security import execution_auth_context
 from app.harness.events import utc_now_iso
-from app.persistence.factory import task_store
+from app.persistence.factory import get_persistence_stores
 
 
 # 本地确定性适配器
@@ -204,8 +204,8 @@ class RealMCPProvider:
     # 从 task_store 里拿 MCP server 和工具的数量
     # 返回当前 provider 状态
     def status(self) -> dict[str, Any]:
-        servers = task_store.list_mcp_servers()
-        tools = task_store.list_mcp_tools()
+        servers = get_persistence_stores().mcp.list_mcp_servers()
+        tools = get_persistence_stores().mcp.list_mcp_tools()
         return {
             "provider": "mcp",
             "server_count": len(servers),
@@ -217,22 +217,22 @@ class RealMCPProvider:
     def save_server(self, server: dict[str, Any]) -> dict[str, Any]:
         if str(server.get("transport") or "stdio") == "stdio":
             self._validate_server_process_config(server)
-        return task_store.save_mcp_server(server)
+        return get_persistence_stores().mcp.save_mcp_server(server)
 
     # 前端 MCP 页面加载 server 列表；列出已保存的 MCP server
     def list_servers(self) -> list[dict[str, Any]]:
-        return task_store.list_mcp_servers()
+        return get_persistence_stores().mcp.list_mcp_servers()
 
     # 启用或禁用某个 server 
     # enabled=True 时状态变成 "enabled" 否则变成 "disabled"
     def set_server_enabled(self, server_id: str, enabled: bool) -> dict[str, Any] | None:
         if enabled:
-            server = task_store.get_mcp_server(server_id)
+            server = get_persistence_stores().mcp.get_mcp_server(server_id)
             if not server:
                 return None
             self._validate_server_process_config(server)
         status = "enabled" if enabled else "disabled"
-        return task_store.update_mcp_server_status(server_id, status, None, enabled=enabled)
+        return get_persistence_stores().mcp.update_mcp_server_status(server_id, status, None, enabled=enabled)
 
     # 找到 server
     # 检查是否有效
@@ -256,7 +256,7 @@ class RealMCPProvider:
                     continue
                 discovered_names.add(name)
                 saved.append(
-                    task_store.upsert_mcp_tool(
+                    get_persistence_stores().mcp.upsert_mcp_tool(
                         {
                             "server_id": server_id,
                             "name": name,
@@ -267,28 +267,28 @@ class RealMCPProvider:
                         }
                     )
                 )
-            task_store.prune_mcp_tools(server_id, discovered_names)
-            task_store.update_mcp_server_status(server_id, "connected", None)
+            get_persistence_stores().mcp.prune_mcp_tools(server_id, discovered_names)
+            get_persistence_stores().mcp.update_mcp_server_status(server_id, "connected", None)
             return {"server_id": server_id, "status": "connected", "tools": saved, "latency_ms": self._elapsed_ms(started)}
         except Exception as exc:
-            task_store.update_mcp_server_status(server_id, "failed", str(exc))
+            get_persistence_stores().mcp.update_mcp_server_status(server_id, "failed", str(exc))
             raise
     
     # 从数据库里列出已注册工具 MCP 管理页展示工具 后续做审批前先看有哪些工具
     def list_tools(self, server_id: str | None = None) -> list[dict[str, Any]]:
-        return task_store.list_mcp_tools(server_id)
+        return get_persistence_stores().mcp.list_mcp_tools(server_id)
  
     # 启用或禁用某个工具 启用/禁用是工具是否可用 审批是某个 agent 能不能用
     def set_tool_enabled(self, server_id: str, tool_name: str, enabled: bool) -> dict[str, Any] | None:
-        return task_store.update_mcp_tool_enabled(server_id, tool_name, enabled)
+        return get_persistence_stores().mcp.update_mcp_tool_enabled(server_id, tool_name, enabled)
  
     # 给某个 agent 对某个 tool 写审批记录 
     def set_approval(self, agent_code: str, server_id: str, tool_name: str, allowed: bool, reason: str | None = None) -> dict[str, Any]:
-        return task_store.set_mcp_tool_approval(agent_code, server_id, tool_name, allowed, reason)
+        return get_persistence_stores().mcp.set_mcp_tool_approval(agent_code, server_id, tool_name, allowed, reason)
 
     # 去数据库查这个 agent 对这个工具是否有审批 在真正调用工具前做权限检查
     def check_approval(self, agent_code: str, server_id: str, tool_name: str) -> dict[str, Any]:
-        approval = task_store.get_mcp_tool_approval(agent_code, server_id, tool_name)
+        approval = get_persistence_stores().mcp.get_mcp_tool_approval(agent_code, server_id, tool_name)
         allowed = bool(approval and approval.get("allowed"))
         reason = approval.get("reason") if approval else "MCP tool has not been approved for this agent."
         return {"agent_code": agent_code, "server_id": server_id, "tool_name": tool_name, "allowed": allowed, "reason": reason}
@@ -316,7 +316,7 @@ class RealMCPProvider:
         arguments = arguments or {}
         try:
             server = self._enabled_server(server_id)
-            tool = task_store.get_mcp_tool(server_id, tool_name)
+            tool = get_persistence_stores().mcp.get_mcp_tool(server_id, tool_name)
             if tool and not tool.get("enabled"):
                 raise PermissionError(f"MCP tool disabled: {server_id}:{tool_name}")
             approval = self.check_approval(agent_code, server_id, tool_name)
@@ -330,7 +330,7 @@ class RealMCPProvider:
             output = {"provider": "mcp", "server_id": server_id, "tool_name": tool_name, "result": result}
             mcp_error = self._mcp_error_message(result)
             context = execution_auth_context()
-            task_store.save_mcp_call_log(
+            get_persistence_stores().mcp.save_mcp_call_log(
                 {
                     "call_id": call_id,
                     "server_id": server_id,
@@ -352,8 +352,8 @@ class RealMCPProvider:
             return {**output, "call_id": call_id, "status": "failed" if mcp_error else "completed", "error_message": mcp_error}
         except Exception as exc:
             context = execution_auth_context()
-            server = task_store.get_mcp_server(server_id) or {}
-            task_store.save_mcp_call_log(
+            server = get_persistence_stores().mcp.get_mcp_server(server_id) or {}
+            get_persistence_stores().mcp.save_mcp_call_log(
                 {
                     "call_id": call_id,
                     "server_id": server_id,
@@ -375,7 +375,7 @@ class RealMCPProvider:
             raise
 
     def list_call_logs(self, limit: int = 100, server_id: str | None = None) -> list[dict[str, Any]]:
-        return task_store.list_mcp_call_logs(limit=limit, server_id=server_id)
+        return get_persistence_stores().mcp.list_mcp_call_logs(limit=limit, server_id=server_id)
 
     # 如果 MCP 返回 isError=true
     # 尝试从返回内容里提取错误文本
@@ -394,7 +394,7 @@ class RealMCPProvider:
     # 是否使用 stdio
     # 是否配置了 command
     def _enabled_server(self, server_id: str, *, require_enabled: bool = True) -> dict[str, Any]:
-        server = task_store.get_mcp_server(server_id)
+        server = get_persistence_stores().mcp.get_mcp_server(server_id)
         if not server:
             raise KeyError(f"MCP server not found: {server_id}")
         if require_enabled and not server.get("enabled"):

@@ -7,6 +7,7 @@ from typing import Any
 from uuid import uuid4
 
 from app.harness.events import BEIJING_TZ, utc_now_iso
+from app.persistence.sqlite_path import resolve_sqlite_path
 
 TASK_TRANSITIONS: dict[str, set[str]] = {
     "created": {"queued", "running", "cancelled", "failed"},
@@ -28,8 +29,8 @@ class SQLiteTaskStore:
     # 初始化数据库路径
     # 创建目录
     # 初始化全部表结构
-    def __init__(self, db_path: str | Path = "data/dev_agent_studio.db"):
-        self.db_path = Path(db_path)
+    def __init__(self, db_path: str | Path | None = None):
+        self.db_path = resolve_sqlite_path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_schema()
 

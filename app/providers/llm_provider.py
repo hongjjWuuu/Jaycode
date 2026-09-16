@@ -10,7 +10,7 @@ from pydantic import BaseModel, ValidationError
 
 from app.core.security import execution_auth_context
 from app.harness.events import utc_now_iso
-from app.persistence.factory import task_store
+from app.persistence.factory import get_persistence_stores
 
 
 class LLMProvider:
@@ -409,15 +409,15 @@ class LLMProvider:
     # 同一个 agent 可以有多个 prompt 版本，这些方法体现了这个项目的“prompt 也是资产”的设计
     def list_prompt_versions(self, agent: str | None = None) -> list[dict[str, Any]]:
         self._ensure_prompt_versions()
-        return task_store.list_prompt_versions(agent)
+        return get_persistence_stores().prompt.list_prompt_versions(agent)
 
     def set_active_prompt_version(self, agent: str, prompt_version: str) -> dict[str, Any] | None:
         self._ensure_prompt_versions()
-        return task_store.set_active_prompt_version(agent, prompt_version)
+        return get_persistence_stores().prompt.set_active_prompt_version(agent, prompt_version)
 
     def save_prompt_version(self, prompt: dict[str, Any]) -> dict[str, Any]:
         self._ensure_prompt_versions()
-        return task_store.upsert_prompt_version(prompt)
+        return get_persistence_stores().prompt.upsert_prompt_version(prompt)
 
     # 对两个 prompt 版本做对比测试
     def run_prompt_ab_test(
@@ -466,7 +466,7 @@ class LLMProvider:
     def active_prompt_map(self) -> dict[str, str]:
         self._ensure_prompt_versions()
         active: dict[str, str] = {}
-        for item in task_store.list_prompt_versions():
+        for item in get_persistence_stores().prompt.list_prompt_versions():
             if item.get("is_active"):
                 key = f"{item.get('agent')}:{item.get('prompt_family')}"
                 active[key] = str(item.get("prompt_version"))
@@ -474,7 +474,7 @@ class LLMProvider:
 
     # 汇总 LLM 使用情况，前端 LLM 控制台的统计基础
     def usage_dashboard(self, limit: int = 500, agent: str | None = None) -> dict[str, Any]:
-        traces = task_store.list_llm_traces(limit=limit, agent=agent)
+        traces = get_persistence_stores().llm.list_llm_traces(limit=limit, agent=agent)
         summary = self._aggregate_usage(traces)
         pricing = self._model_pricing()
         self._apply_costs(summary, pricing)
@@ -555,11 +555,11 @@ class LLMProvider:
         configured_version = self._read_env_value(env_key, env_file)
         active = None
         if use_active_prompt and configured_version:
-            active = task_store.get_prompt_version(agent, configured_version)
+            active = get_persistence_stores().prompt.get_prompt_version(agent, configured_version)
         if use_active_prompt and not active:
-            active = task_store.get_active_prompt_version(agent, prompt_family)
+            active = get_persistence_stores().prompt.get_active_prompt_version(agent, prompt_family)
         if not use_active_prompt:
-            active = task_store.get_prompt_version(agent, prompt_version)
+            active = get_persistence_stores().prompt.get_prompt_version(agent, prompt_version)
         if not active:
             return system_prompt, prompt_version
         suffix = str(active.get("system_suffix") or "").strip()
@@ -571,12 +571,12 @@ class LLMProvider:
     def _ensure_prompt_versions(self) -> None:
         existing = {
             (item.get("agent"), item.get("prompt_version"))
-            for item in task_store.list_prompt_versions()
+            for item in get_persistence_stores().prompt.list_prompt_versions()
         }
         for prompt in self.prompt_versions:
             key = (prompt["agent"], prompt["prompt_version"])
             if key not in existing:
-                task_store.upsert_prompt_version(prompt)
+                get_persistence_stores().prompt.upsert_prompt_version(prompt)
 
     def _ab_result(self, prompt_version: str, result: dict[str, Any]) -> dict[str, Any]:
         token_usage = result.get("token_usage") if isinstance(result.get("token_usage"), dict) else {}
@@ -805,7 +805,7 @@ class LLMProvider:
             total += (output_tokens / 1_000_000) * float(price.get("output_per_1m") or 0)
         return round(total, 6)
 
-    # 把每次 LLM 调用写入 task_store.save_llm_trace(...) 
+    # 把每次 LLM 调用写入 get_persistence_stores().llm.save_llm_trace(...)
     # 即使失败，也尽量不让 trace 保存失败影响主流程
     def _save_trace(
         self,
@@ -823,7 +823,7 @@ class LLMProvider:
     ) -> None:
         try:
             auth_context = execution_auth_context()
-            task_store.save_llm_trace(
+            get_persistence_stores().llm.save_llm_trace(
                 {
                     "trace_id": trace_id,
                     "agent": agent,

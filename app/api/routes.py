@@ -35,7 +35,7 @@ from app.marketplace.installer import (
     preview_marketplace_package,
     uninstall_marketplace_package,
 )
-from app.persistence.factory import memory_store, rag_store, task_store
+from app.persistence.factory import get_persistence_stores
 from app.persistence.rag_store import evaluate_gold_set
 from app.providers.llm_provider import llm_provider
 from app.providers.mcp_provider import mcp_provider
@@ -185,7 +185,7 @@ def process_rag(request: RagProcessRequest) -> RagProcessResponse:
 def ingest_rag(request: RagIngestRequest) -> RagIngestResponse:
     try:
         result = rag_process_graph.invoke(request.model_dump())["result"]
-        saved = rag_store.ingest(request.collection, result["documents"], result["chunks"])
+        saved = get_persistence_stores().rag.ingest(request.collection, result["documents"], result["chunks"])
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return RagIngestResponse(
@@ -201,50 +201,57 @@ def ingest_rag(request: RagIngestRequest) -> RagIngestResponse:
 @router.post("/rag/query", response_model=RagQueryResponse, tags=["RAG Knowledge Agent"])
 def query_rag(request: RagQueryRequest) -> RagQueryResponse:
     actor_id = execution_auth_context().actor_id
-    results = rag_store.query(request.collection, request.question, request.limit, actor_id=actor_id)
+    results = get_persistence_stores().rag.query(request.collection, request.question, request.limit, actor_id=actor_id)
     return RagQueryResponse(collection=request.collection, question=request.question, results=results)
 
 
 @router.get("/rag/documents", tags=["RAG Knowledge Agent"])
 def list_rag_documents(collection: str | None = None) -> dict[str, object]:
-    return {"documents": rag_store.list_documents(collection, actor_id=execution_auth_context().actor_id)}
+    return {"documents": get_persistence_stores().rag.list_documents(collection, actor_id=execution_auth_context().actor_id)}
 
 
 @router.post("/rag/documents/acl", tags=["RAG Knowledge Agent"])
 def set_rag_document_acl(request: RagDocumentAclRequest) -> dict[str, object]:
-    if not hasattr(rag_store, "set_document_acl"):
+    rag = get_persistence_stores().rag
+    if not hasattr(rag, "set_document_acl"):
         raise HTTPException(status_code=501, detail="Document ACL is not supported by the active RAG store")
-    if not rag_store.set_document_acl(request.collection, request.path, request.principals):
+    if not rag.set_document_acl(request.collection, request.path, request.principals):
         raise HTTPException(status_code=404, detail="Current document version not found")
     return {"collection": request.collection, "path": request.path, "principals": request.principals}
 
 
 @router.get("/rag/gold-cases", tags=["RAG Knowledge Agent"])
 def list_rag_gold_cases(collection: str | None = None, include_disabled: bool = True) -> dict[str, object]:
-    return {"cases": rag_store.list_gold_cases(collection, include_disabled=include_disabled)}
+    return {"cases": get_persistence_stores().rag.list_gold_cases(collection, include_disabled=include_disabled)}
 
 
 @router.post("/rag/gold-cases", tags=["RAG Knowledge Agent"])
 def save_rag_gold_case(request: RagGoldCaseRequest) -> dict[str, object]:
-    case = rag_store.save_gold_case(request.model_dump())
+    case = get_persistence_stores().rag.save_gold_case(request.model_dump())
     return {"case": case}
 
 
 @router.delete("/rag/gold-cases/{case_id}", tags=["RAG Knowledge Agent"])
 def delete_rag_gold_case(case_id: str) -> dict[str, object]:
-    if not rag_store.delete_gold_case(case_id):
+    if not get_persistence_stores().rag.delete_gold_case(case_id):
         raise HTTPException(status_code=404, detail="Gold case not found")
     return {"case_id": case_id, "deleted": True}
 
 
 @router.get("/rag/gold-cases/evaluate", tags=["RAG Knowledge Agent"])
 def evaluate_rag_gold_cases(collection: str | None = None, k: int = 5) -> dict[str, object]:
-    return evaluate_gold_set(rag_store, collection=collection, actor_id=execution_auth_context().actor_id, k=max(1, min(k, 50)))
+    return evaluate_gold_set(
+        get_persistence_stores().rag,
+        collection=collection,
+        actor_id=execution_auth_context().actor_id,
+        k=max(1, min(k, 50)),
+    )
 
 
 @router.get("/rag/status", tags=["RAG Knowledge Agent"])
 def get_rag_status() -> dict[str, object]:
-    status = rag_store.status() if hasattr(rag_store, "status") else {"kind": "unknown"}
+    rag = get_persistence_stores().rag
+    status = rag.status() if hasattr(rag, "status") else {"kind": "unknown"}
     return {"store": status}
 
 
@@ -263,7 +270,7 @@ def create_learning_plan(request: LearningCoachRequest) -> LearningCoachResponse
 
 @router.post("/tasks/{task_id}/learning-plan", response_model=LearningPlanResponse, tags=["Learning Coach Agent"])
 def create_task_learning_plan(task_id: str, request: LearningPlanCreateRequest) -> LearningPlanResponse:
-    task = task_store.get_task(task_id)
+    task = get_persistence_stores().task.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
     goal = request.goal or str(task.get("goal") or "")
@@ -276,7 +283,7 @@ def create_task_learning_plan(task_id: str, request: LearningPlanCreateRequest) 
         }
     )["result"]
     plan_id = f"lp_{uuid4().hex}"
-    saved = task_store.save_learning_plan(
+    saved = get_persistence_stores().task.save_learning_plan(
         plan_id=plan_id,
         task_id=task_id,
         topic=request.topic,
@@ -285,7 +292,7 @@ def create_task_learning_plan(task_id: str, request: LearningPlanCreateRequest) 
         quiz=result["quiz"],
         report_markdown=result["report_markdown"],
     )
-    task_store.append_event(
+    get_persistence_stores().task.append_event(
         {
             "event_id": f"evt_{uuid4().hex}",
             "task_id": task_id,
@@ -303,24 +310,24 @@ def create_task_learning_plan(task_id: str, request: LearningPlanCreateRequest) 
             },
         }
     )
-    task_store.save_artifact(task_id, "learning_plan", request.topic, saved)
-    rag_store.add_note("project-memory", f"learning/{plan_id}", result["report_markdown"])
+    get_persistence_stores().task.save_artifact(task_id, "learning_plan", request.topic, saved)
+    get_persistence_stores().rag.add_note("project-memory", f"learning/{plan_id}", result["report_markdown"])
     return LearningPlanResponse(plan=saved)
 
 
 @router.get("/learning/plans", tags=["Learning Coach Agent"])
 def list_learning_plans(task_id: str | None = None) -> dict[str, object]:
-    return {"plans": task_store.list_learning_plans(task_id)}
+    return {"plans": get_persistence_stores().task.list_learning_plans(task_id)}
 
 
 @router.patch("/learning/plans/{plan_id}", response_model=LearningPlanResponse, tags=["Learning Coach Agent"])
 def update_learning_plan(plan_id: str, request: LearningPlanStatusRequest) -> LearningPlanResponse:
     if request.status not in {"active", "completed", "paused"}:
         raise HTTPException(status_code=400, detail="status must be active, completed, or paused")
-    updated = task_store.update_learning_plan_status(plan_id, request.status)
+    updated = get_persistence_stores().task.update_learning_plan_status(plan_id, request.status)
     if not updated:
         raise HTTPException(status_code=404, detail="Learning plan not found")
-    task_store.append_event(
+    get_persistence_stores().task.append_event(
         {
             "event_id": f"evt_{uuid4().hex}",
             "task_id": updated["task_id"],
@@ -338,25 +345,25 @@ def update_learning_plan(plan_id: str, request: LearningPlanStatusRequest) -> Le
 @router.get("/skills/plugins", tags=["Skills"])
 def list_skill_plugins() -> dict[str, object]:
     ensure_builtin_skills_seeded()
-    return {"plugins": task_store.list_skill_plugins()}
+    return {"plugins": get_persistence_stores().skill.list_skill_plugins()}
 
 
 @router.get("/skills", tags=["Skills"])
 def list_skills(category: str | None = None) -> dict[str, object]:
     ensure_builtin_skills_seeded()
-    return {"skills": task_store.list_skills(category)}
+    return {"skills": get_persistence_stores().skill.list_skills(category)}
 
 
 @router.get("/skills/approvals", tags=["Skills"])
 def list_skill_approvals(agent_code: str | None = None) -> dict[str, object]:
     ensure_builtin_skills_seeded()
-    return {"approvals": task_store.list_skill_approvals(agent_code)}
+    return {"approvals": get_persistence_stores().skill.list_skill_approvals(agent_code)}
 
 
 @router.get("/skills/execution-logs", tags=["Skills"])
 def list_skill_execution_logs(limit: int = 100, skill_code: str | None = None) -> dict[str, object]:
     ensure_builtin_skills_seeded()
-    return {"logs": task_store.list_skill_execution_logs(limit=limit, skill_code=skill_code)}
+    return {"logs": get_persistence_stores().skill.list_skill_execution_logs(limit=limit, skill_code=skill_code)}
 
 
 @router.get("/skills/sandbox/status", tags=["Skills"])
@@ -367,9 +374,9 @@ def get_skill_sandbox_status() -> dict[str, object]:
 @router.get("/skills/{skill_code}/versions", tags=["Skills"])
 def list_skill_versions(skill_code: str) -> dict[str, object]:
     ensure_builtin_skills_seeded()
-    if not task_store.get_skill(skill_code):
+    if not get_persistence_stores().skill.get_skill(skill_code):
         raise HTTPException(status_code=404, detail="Skill not found")
-    return {"versions": task_store.list_skill_versions(skill_code)}
+    return {"versions": get_persistence_stores().skill.list_skill_versions(skill_code)}
 
 
 @router.post("/skills/{skill_code}/rollback", tags=["Skills"])
@@ -378,7 +385,7 @@ def rollback_skill_version(skill_code: str, payload: dict[str, object]) -> dict[
     version = str(payload.get("version") or "").strip()
     if not version:
         raise HTTPException(status_code=400, detail="version is required")
-    skill = task_store.rollback_skill_version(skill_code, version)
+    skill = get_persistence_stores().skill.rollback_skill_version(skill_code, version)
     if not skill:
         raise HTTPException(status_code=404, detail="Skill version not found")
     return {"skill": skill}
@@ -387,7 +394,7 @@ def rollback_skill_version(skill_code: str, payload: dict[str, object]) -> dict[
 @router.post("/skills/{skill_code}/enabled", tags=["Skills"])
 def set_skill_enabled(skill_code: str, payload: dict[str, object]) -> dict[str, object]:
     ensure_builtin_skills_seeded()
-    skill = task_store.update_skill_enabled(skill_code, bool(payload.get("enabled")))
+    skill = get_persistence_stores().skill.update_skill_enabled(skill_code, bool(payload.get("enabled")))
     if not skill:
         raise HTTPException(status_code=404, detail="Skill not found")
     return {"skill": skill}
@@ -396,10 +403,10 @@ def set_skill_enabled(skill_code: str, payload: dict[str, object]) -> dict[str, 
 @router.post("/skills/{skill_code}/approval", tags=["Skills"])
 def set_skill_approval(skill_code: str, payload: dict[str, object]) -> dict[str, object]:
     ensure_builtin_skills_seeded()
-    if not task_store.get_skill(skill_code):
+    if not get_persistence_stores().skill.get_skill(skill_code):
         raise HTTPException(status_code=404, detail="Skill not found")
     agent_code = str(payload.get("agent_code") or "skill_console").strip()
-    approval = task_store.set_skill_approval(
+    approval = get_persistence_stores().skill.set_skill_approval(
         skill_code,
         agent_code,
         bool(payload.get("allowed")),
@@ -429,7 +436,7 @@ def execute_skill_api(skill_code: str, payload: dict[str, object]) -> dict[str, 
 @router.post("/skills/{skill_code}/test", tags=["Skills"])
 def test_skill_api(skill_code: str, payload: dict[str, object]) -> dict[str, object]:
     ensure_builtin_skills_seeded()
-    skill = task_store.get_skill(skill_code)
+    skill = get_persistence_stores().skill.get_skill(skill_code)
     if not skill:
         raise HTTPException(status_code=404, detail="Skill not found")
     tests = skill.get("tests") if isinstance(skill.get("tests"), list) else []
@@ -460,7 +467,7 @@ def test_skill_api(skill_code: str, payload: dict[str, object]) -> dict[str, obj
 def uninstall_skill_plugin_api(plugin_id: str) -> dict[str, object]:
     ensure_builtin_skills_seeded()
     try:
-        result = task_store.uninstall_skill_plugin(plugin_id)
+        result = get_persistence_stores().skill.uninstall_skill_plugin(plugin_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not result:
@@ -475,7 +482,7 @@ def get_marketplace_catalog() -> dict[str, object]:
 
 @router.get("/marketplace/installs", tags=["Plugin Marketplace"])
 def list_marketplace_installs(limit: int = 80, package_type: str | None = None) -> dict[str, object]:
-    return {"installs": task_store.list_marketplace_installs(limit=limit, package_type=package_type)}
+    return {"installs": get_persistence_stores().marketplace.list_marketplace_installs(limit=limit, package_type=package_type)}
 
 
 @router.post("/marketplace/preview", tags=["Plugin Marketplace"])
@@ -506,7 +513,7 @@ def install_marketplace(payload: dict[str, object]) -> dict[str, object]:
 @router.post("/marketplace/packages/{package_id}/approve", tags=["Plugin Marketplace"])
 def approve_marketplace(package_id: str, payload: dict[str, object] | None = None) -> dict[str, object]:
     context = execution_auth_context()
-    result = task_store.set_marketplace_approval(package_id, "approved", context.actor_id, str((payload or {}).get("reason") or "") or None)
+    result = get_persistence_stores().marketplace.set_marketplace_approval(package_id, "approved", context.actor_id, str((payload or {}).get("reason") or "") or None)
     if not result:
         raise HTTPException(status_code=404, detail="Marketplace package preview not found")
     audit_action("marketplace_approve", "marketplace_package", package_id, metadata={"reason": result.get("approval_reason")})
@@ -516,7 +523,7 @@ def approve_marketplace(package_id: str, payload: dict[str, object] | None = Non
 @router.post("/marketplace/packages/{package_id}/reject", tags=["Plugin Marketplace"])
 def reject_marketplace(package_id: str, payload: dict[str, object] | None = None) -> dict[str, object]:
     context = execution_auth_context()
-    result = task_store.set_marketplace_approval(package_id, "rejected", context.actor_id, str((payload or {}).get("reason") or "") or None)
+    result = get_persistence_stores().marketplace.set_marketplace_approval(package_id, "rejected", context.actor_id, str((payload or {}).get("reason") or "") or None)
     if not result:
         raise HTTPException(status_code=404, detail="Marketplace package preview not found")
     audit_action("marketplace_reject", "marketplace_package", package_id, metadata={"reason": result.get("approval_reason")})
@@ -587,7 +594,7 @@ def list_registered_mcp_tools(server_id: str | None = None, agent_code: str = "w
     tools = []
     for tool in mcp_provider.real.list_tools(server_id):
         approval = mcp_provider.real.check_approval(agent_code, tool["server_id"], tool["name"])
-        stored_approval = task_store.get_mcp_tool_approval(agent_code, tool["server_id"], tool["name"])
+        stored_approval = get_persistence_stores().mcp.get_mcp_tool_approval(agent_code, tool["server_id"], tool["name"])
         tools.append(
             {
                 **tool,
@@ -684,12 +691,12 @@ def run_collaboration_benchmark_api(request: BenchmarkRunRequest) -> BenchmarkRu
 
 @router.get("/benchmarks", tags=["Benchmark"])
 def list_benchmarks(limit: int = 50, benchmark_type: str | None = None) -> dict[str, object]:
-    return {"runs": task_store.list_benchmark_runs(limit=limit, benchmark_type=benchmark_type)}
+    return {"runs": get_persistence_stores().benchmark.list_benchmark_runs(limit=limit, benchmark_type=benchmark_type)}
 
 
 @router.get("/benchmarks/{run_id}", tags=["Benchmark"])
 def get_benchmark(run_id: str) -> dict[str, object]:
-    run = task_store.get_benchmark_run(run_id)
+    run = get_persistence_stores().benchmark.get_benchmark_run(run_id)
     if not run:
         raise HTTPException(status_code=404, detail="Benchmark run not found")
     return {"run": run}
@@ -702,7 +709,7 @@ def get_llm_status() -> dict[str, object]:
 
 @router.get("/llm/traces", tags=["LLM Provider"])
 def list_llm_traces(limit: int = 50, agent: str | None = None) -> dict[str, object]:
-    return {"traces": task_store.list_llm_traces(limit=limit, agent=agent)}
+    return {"traces": get_persistence_stores().llm.list_llm_traces(limit=limit, agent=agent)}
 
 
 @router.get("/llm/prompts", tags=["LLM Provider"])
@@ -823,12 +830,12 @@ def validate_visual_workflow(request: WorkflowValidateRequest) -> WorkflowValida
 
 @router.get("/workflows", tags=["Workflow Runner"])
 def list_workflows() -> dict[str, object]:
-    return {"workflows": task_store.list_workflows()}
+    return {"workflows": get_persistence_stores().workflow.list_workflows()}
 
 
 @router.post("/workflows", response_model=WorkflowSaveResponse, tags=["Workflow Runner"])
 def create_workflow(request: WorkflowSaveRequest) -> WorkflowSaveResponse:
-    workflow = task_store.save_workflow(
+    workflow = get_persistence_stores().workflow.save_workflow(
         request.workflow_id,
         request.name,
         request.description,
@@ -841,7 +848,7 @@ def create_workflow(request: WorkflowSaveRequest) -> WorkflowSaveResponse:
 
 @router.get("/workflows/{workflow_id}", tags=["Workflow Runner"])
 def get_workflow(workflow_id: str) -> dict[str, object]:
-    workflow = task_store.get_workflow(workflow_id)
+    workflow = get_persistence_stores().workflow.get_workflow(workflow_id)
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
     return {"workflow": workflow}
@@ -849,7 +856,7 @@ def get_workflow(workflow_id: str) -> dict[str, object]:
 
 @router.put("/workflows/{workflow_id}", response_model=WorkflowSaveResponse, tags=["Workflow Runner"])
 def update_workflow(workflow_id: str, request: WorkflowSaveRequest) -> WorkflowSaveResponse:
-    workflow = task_store.save_workflow(
+    workflow = get_persistence_stores().workflow.save_workflow(
         workflow_id,
         request.name,
         request.description,
@@ -881,7 +888,7 @@ def run_collaboration(request: CollaborationRequest) -> TaskRunResponse:
     return TaskRunResponse(
         task_id=context.task_id,
         status=context.status,
-        events=task_store.get_events(context.task_id),
+        events=get_persistence_stores().task.get_events(context.task_id),
         result={},
     )
 
@@ -905,7 +912,7 @@ def run_task(request: TaskRunRequest) -> TaskRunResponse:
         },
         input_state=workflow_payload,
     )
-    return TaskRunResponse(task_id=context.task_id, status=context.status, events=task_store.get_events(context.task_id), result={})
+    return TaskRunResponse(task_id=context.task_id, status=context.status, events=get_persistence_stores().task.get_events(context.task_id), result={})
 
 
 @router.post("/tasks/run/stream", tags=["Task Runtime"])
@@ -935,7 +942,7 @@ def run_collaboration_task_api(request: TaskRunRequest) -> TaskRunResponse:
             "_jaycode_runner": "collaboration",
         },
     )
-    return TaskRunResponse(task_id=context.task_id, status=context.status, events=task_store.get_events(context.task_id), result={})
+    return TaskRunResponse(task_id=context.task_id, status=context.status, events=get_persistence_stores().task.get_events(context.task_id), result={})
 
 
 @router.post("/tasks/collaborate/stream", tags=["Task Runtime"])
@@ -953,16 +960,16 @@ async def _subscribe_task_events(task_id: str, request: Request) -> AsyncIterato
     while True:
         if await request.is_disconnected():
             return
-        new_events = task_store.get_events_after(task_id, sequence)
+        new_events = get_persistence_stores().task.get_events_after(task_id, sequence)
         for event in new_events:
             sequence = int(event.get("event_seq") or sequence)
             yield f"id: {sequence}\ndata: {json.dumps(event, ensure_ascii=False)}\n\n"
-        task = task_store.get_task(task_id)
+        task = get_persistence_stores().task.get_task(task_id)
         if not task:
             yield f"data: {json.dumps({'type': 'error', 'task_id': task_id, 'content': 'Task not found'}, ensure_ascii=False)}\n\n"
             break
         if task.get("status") in {"completed", "failed", "cancelled", "waiting_review", "rejected"}:
-            artifacts = task_store.get_artifacts(task_id)
+            artifacts = get_persistence_stores().task.get_artifacts(task_id)
             artifact = next((item for item in reversed(artifacts) if item.get("name") == "result"), {})
             result = artifact.get("content") if isinstance(artifact.get("content"), dict) else {}
             result_payload = {"type": "task_result", "task_id": task_id, "status": task["status"], **result}
@@ -978,32 +985,32 @@ async def _subscribe_task_events(task_id: str, request: Request) -> AsyncIterato
 
 @router.get("/tasks", tags=["Task Runtime"])
 def list_tasks(limit: int = 100, offset: int = 0) -> dict[str, object]:
-    return {"tasks": task_store.list_tasks(limit=limit, offset=offset)}
+    return {"tasks": get_persistence_stores().task.list_tasks(limit=limit, offset=offset)}
 
 
 @router.get("/workers", tags=["Task Runtime"])
 def list_workers() -> dict[str, object]:
-    return {"workers": task_store.list_workers()}
+    return {"workers": get_persistence_stores().task.list_workers()}
 
 
 @router.get("/tasks/{task_id}", tags=["Task Runtime"])
 def get_task(task_id: str) -> dict[str, object]:
-    task = task_store.get_task(task_id)
+    task = get_persistence_stores().task.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    return {"task": task, "artifacts": task_store.get_artifacts(task_id)}
+    return {"task": task, "artifacts": get_persistence_stores().task.get_artifacts(task_id)}
 
 
 @router.get("/tasks/{task_id}/events", tags=["Task Runtime"])
 def get_task_events(task_id: str, after_seq: int = 0) -> dict[str, object]:
-    if not task_store.get_task(task_id):
+    if not get_persistence_stores().task.get_task(task_id):
         raise HTTPException(status_code=404, detail="Task not found")
-    return {"events": task_store.get_events_after(task_id, max(0, after_seq))}
+    return {"events": get_persistence_stores().task.get_events_after(task_id, max(0, after_seq))}
 
 
 @router.get("/tasks/{task_id}/report", tags=["Task Runtime"])
 def get_task_report(task_id: str) -> dict[str, object]:
-    task = task_store.get_task(task_id)
+    task = get_persistence_stores().task.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
     return {"task_id": task_id, "final_report": task.get("final_report")}
@@ -1011,7 +1018,7 @@ def get_task_report(task_id: str) -> dict[str, object]:
 
 @router.post("/tasks/{task_id}/cancel", tags=["Task Runtime"])
 def cancel_task(task_id: str) -> dict[str, object]:
-    if not task_store.get_task(task_id):
+    if not get_persistence_stores().task.get_task(task_id):
         raise HTTPException(status_code=404, detail="Task not found")
     harness_runtime.cancel_task(task_id)
     return {"task_id": task_id, "status": "cancelled"}
@@ -1019,13 +1026,13 @@ def cancel_task(task_id: str) -> dict[str, object]:
 
 @router.post("/tasks/{task_id}/ask", response_model=TaskQuestionResponse, tags=["Task Runtime"])
 def ask_task(task_id: str, request: TaskQuestionRequest) -> TaskQuestionResponse:
-    task = task_store.get_task(task_id)
+    task = get_persistence_stores().task.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    events = task_store.get_events(task_id)
+    events = get_persistence_stores().task.get_events(task_id)
     report = task.get("final_report") or ""
-    sources = rag_store.query(request.collection, request.question, 5)
-    memory_store.extract_candidates(request.question, source_ref=f"task/{task_id}/ask")
+    sources = get_persistence_stores().rag.query(request.collection, request.question, 5)
+    get_persistence_stores().memory.extract_candidates(request.question, source_ref=f"task/{task_id}/ask")
     answer = _answer_from_task_context(request.question, report, events, sources)
     return TaskQuestionResponse(
         task_id=task_id,
@@ -1038,9 +1045,9 @@ def ask_task(task_id: str, request: TaskQuestionRequest) -> TaskQuestionResponse
 
 @router.get("/tasks/{task_id}/events/{event_id}", tags=["Task Runtime"])
 def get_task_event_detail(task_id: str, event_id: str) -> dict[str, object]:
-    if not task_store.get_task(task_id):
+    if not get_persistence_stores().task.get_task(task_id):
         raise HTTPException(status_code=404, detail="Task not found")
-    event = next((item for item in task_store.get_events(task_id) if item.get("event_id") == event_id), None)
+    event = next((item for item in get_persistence_stores().task.get_events(task_id) if item.get("event_id") == event_id), None)
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
     return {"event": event, "detail": _event_detail(event)}
@@ -1048,7 +1055,7 @@ def get_task_event_detail(task_id: str, event_id: str) -> dict[str, object]:
 
 @router.post("/tasks/{task_id}/review-action", response_model=ReviewActionResponse, tags=["Task Runtime"])
 def apply_review_action(task_id: str, request: ReviewActionRequest) -> ReviewActionResponse:
-    task = task_store.get_task(task_id)
+    task = get_persistence_stores().task.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
     action = request.action
@@ -1056,9 +1063,9 @@ def apply_review_action(task_id: str, request: ReviewActionRequest) -> ReviewAct
     status = "waiting_review" if action in {"rerun_analysis", "focus_module", "save_knowledge", "learning_task"} else task["status"]
     if action == "save_knowledge":
         content = request.comment or task.get("final_report") or message
-        rag_store.add_note("project-memory", f"review/{task_id}", content)
+        get_persistence_stores().rag.add_note("project-memory", f"review/{task_id}", content)
         message = "Review note saved into project-memory knowledge collection."
-    task_store.apply_review_transition(
+    get_persistence_stores().review.apply_review_transition(
         task_id,
         action,
         request.comment,
@@ -1078,7 +1085,7 @@ def apply_review_action(task_id: str, request: ReviewActionRequest) -> ReviewAct
 
 @router.post("/knowledge/notes", response_model=KnowledgeNoteResponse, tags=["RAG Knowledge Agent"])
 def add_knowledge_note(request: KnowledgeNoteRequest) -> KnowledgeNoteResponse:
-    saved = rag_store.add_note(request.collection, request.path, request.content)
+    saved = get_persistence_stores().rag.add_note(request.collection, request.path, request.content)
     return KnowledgeNoteResponse(**saved)
 
 
@@ -1087,7 +1094,7 @@ def extract_memory_candidates(request: MemoryExtractRequest) -> list[dict[str, o
     try:
         context = execution_auth_context()
         _authorize_memory(request.scope, request.scope_id, "extract", context.actor_id, context.role)
-        return memory_store.extract_candidates(
+        return get_persistence_stores().memory.extract_candidates(
             request.text,
             scope=request.scope,
             scope_id=request.scope_id,
@@ -1112,7 +1119,7 @@ def list_memories(
     elif role != "admin":
         scope = "user"
         scope_id = actor
-    return memory_store.list_memories(scope=scope, scope_id=scope_id, status=status)
+    return get_persistence_stores().memory.list_memories(scope=scope, scope_id=scope_id, status=status)
 
 
 @router.post("/memories/{memory_id}/confirm", response_model=MemoryRecordResponse, tags=["RAG Knowledge Agent"])
@@ -1120,14 +1127,14 @@ def confirm_memory(
     memory_id: str,
     request: MemoryConfirmRequest,
 ) -> dict[str, object]:
-    memory = memory_store.get_memory(memory_id)
+    memory = get_persistence_stores().memory.get_memory(memory_id)
     if not memory:
         raise HTTPException(status_code=404, detail="Memory not found")
     context = execution_auth_context()
     _authorize_memory(memory["scope"], memory["scope_id"], "confirm", context.actor_id, context.role)
     collection = request.collection or ("project-memory" if memory["scope"] == "project" else f"user-memory/{memory['scope_id']}")
-    saved = rag_store.add_note(collection, f"memory/{memory_id}", memory["content"])
-    confirmed = memory_store.confirm(memory_id, saved["path"], actor_id=context.actor_id)
+    saved = get_persistence_stores().rag.add_note(collection, f"memory/{memory_id}", memory["content"])
+    confirmed = get_persistence_stores().memory.confirm(memory_id, saved["path"], actor_id=context.actor_id)
     if not confirmed:
         raise HTTPException(status_code=404, detail="Memory not found")
     return confirmed
@@ -1137,12 +1144,12 @@ def confirm_memory(
 def reject_memory(
     memory_id: str,
 ) -> dict[str, object]:
-    memory = memory_store.get_memory(memory_id)
+    memory = get_persistence_stores().memory.get_memory(memory_id)
     if not memory:
         raise HTTPException(status_code=404, detail="Memory not found")
     context = execution_auth_context()
     _authorize_memory(memory["scope"], memory["scope_id"], "reject", context.actor_id, context.role)
-    rejected = memory_store.reject(memory_id, actor_id=context.actor_id)
+    rejected = get_persistence_stores().memory.reject(memory_id, actor_id=context.actor_id)
     if not rejected:
         raise HTTPException(status_code=404, detail="Memory not found")
     return rejected
@@ -1152,24 +1159,24 @@ def reject_memory(
 def delete_memory(
     memory_id: str,
 ) -> dict[str, bool]:
-    memory = memory_store.get_memory(memory_id)
+    memory = get_persistence_stores().memory.get_memory(memory_id)
     if not memory:
         raise HTTPException(status_code=404, detail="Memory not found")
     context = execution_auth_context()
     _authorize_memory(memory["scope"], memory["scope_id"], "delete", context.actor_id, context.role)
     if memory.get("rag_path"):
         collection = "project-memory" if memory["scope"] == "project" else f"user-memory/{memory['scope_id']}"
-        rag_store.delete_note(collection, memory["rag_path"])
-    if not memory_store.delete(memory_id, actor_id=context.actor_id):
+        get_persistence_stores().rag.delete_note(collection, memory["rag_path"])
+    if not get_persistence_stores().memory.delete(memory_id, actor_id=context.actor_id):
         raise HTTPException(status_code=404, detail="Memory not found")
     return {"deleted": True}
 
 
 @router.get("/memories/{memory_id}/lifecycle", tags=["RAG Knowledge Agent"])
 def list_memory_lifecycle(memory_id: str) -> dict[str, object]:
-    if not memory_store.get_memory(memory_id):
+    if not get_persistence_stores().memory.get_memory(memory_id):
         raise HTTPException(status_code=404, detail="Memory not found")
-    return {"events": memory_store.list_lifecycle_events(memory_id)}
+    return {"events": get_persistence_stores().memory.list_lifecycle_events(memory_id)}
 
 
 def _authorize_memory(scope: str, scope_id: str, action: str, actor: str | None, role: str | None) -> None:
@@ -1188,8 +1195,8 @@ def _authorize_memory(scope: str, scope_id: str, action: str, actor: str | None,
 
 @router.post("/learning/coach/chat", response_model=LearningChatResponse, tags=["Learning Coach Agent"])
 def chat_learning_coach(request: LearningChatRequest) -> LearningChatResponse:
-    task = task_store.get_task(request.task_id) if request.task_id else None
-    memory_store.extract_candidates(request.answer or request.question, source_ref=f"learning/{request.task_id or 'general'}/{request.turn}")
+    task = get_persistence_stores().task.get_task(request.task_id) if request.task_id else None
+    get_persistence_stores().memory.extract_candidates(request.answer or request.question, source_ref=f"learning/{request.task_id or 'general'}/{request.turn}")
     stage = _learning_stage_context(request)
     reply = _learning_reply(request, task, stage)
     next_questions = _learning_next_questions(request, task, stage)
@@ -1215,7 +1222,7 @@ def approve_task(task_id: str, request: HumanReviewRequest) -> HumanReviewRespon
         return result
     
     # 3. 状态是 waiting_review 但没有断点 → 异常
-    task = task_store.get_task(task_id)
+    task = get_persistence_stores().task.get_task(task_id)
     if task and task.get("status") == "waiting_review" and _is_visual_workflow_task(task_id):
         raise HTTPException(status_code=409, detail="Workflow is waiting for review but no resume checkpoint was found.")
     
@@ -1254,7 +1261,7 @@ def _resolve_task_workflow(request: TaskRunRequest) -> dict[str, object]:
     planned_workflow: dict[str, object] | None = None
 
     if request.workflow_id:
-        workflow = task_store.get_workflow(request.workflow_id)
+        workflow = get_persistence_stores().workflow.get_workflow(request.workflow_id)
         if not workflow:
             raise HTTPException(status_code=404, detail="Workflow not found")
         workflow_name = workflow["name"]
@@ -1392,11 +1399,11 @@ def _planned_nodes_for_goal(goal: str, require_review: bool) -> tuple[list[dict[
 
 
 def _record_human_review(task_id: str, action: str, status: str, comment: str | None) -> HumanReviewResponse:
-    task = task_store.get_task(task_id)
+    task = get_persistence_stores().task.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    task_store.apply_review_transition(
+    get_persistence_stores().review.apply_review_transition(
         task_id,
         action,
         comment,
@@ -1415,10 +1422,10 @@ def _record_human_review(task_id: str, action: str, status: str, comment: str | 
 
 
 def _latest_resume_checkpoint(task_id: str) -> dict[str, object] | None:
-    task = task_store.get_task(task_id)
+    task = get_persistence_stores().task.get_task(task_id)
     if not task or task.get("status") != "waiting_review":
         return None
-    for artifact in reversed(task_store.get_artifacts(task_id)):
+    for artifact in reversed(get_persistence_stores().task.get_artifacts(task_id)):
         content = artifact.get("content")
         if not isinstance(content, dict):
             continue
@@ -1431,7 +1438,7 @@ def _latest_resume_checkpoint(task_id: str) -> dict[str, object] | None:
 
 
 def _is_visual_workflow_task(task_id: str) -> bool:
-    for artifact in reversed(task_store.get_artifacts(task_id)):
+    for artifact in reversed(get_persistence_stores().task.get_artifacts(task_id)):
         content = artifact.get("content")
         if not isinstance(content, dict):
             continue
@@ -1471,7 +1478,7 @@ def _retry_pre_run_confirmation(
         },
         "retry_attempt": next_used,
     }
-    task_store.apply_review_transition(
+    get_persistence_stores().review.apply_review_transition(
         task_id,
         action,
         comment,
@@ -1515,10 +1522,10 @@ def _resume_after_human_review(
     action: str,
     comment: str | None,
 ) -> HumanReviewResponse:
-    if not task_store.get_task(task_id):
+    if not get_persistence_stores().task.get_task(task_id):
         raise HTTPException(status_code=404, detail="Task not found")
     try:
-        task_store.queue_task_resume(task_id, checkpoint, action, comment)
+        get_persistence_stores().task.queue_task_resume(task_id, checkpoint, action, comment)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return HumanReviewResponse(task_id=task_id, status="queued", action=action, comment=comment)
@@ -1632,7 +1639,7 @@ def _learning_stage_context(request: LearningChatRequest) -> dict[str, object]:
         return {"day": request.day, "theme": request.theme}
     if not request.task_id:
         return {}
-    plans = task_store.list_learning_plans(request.task_id)
+    plans = get_persistence_stores().task.list_learning_plans(request.task_id)
     active_plan = next((plan for plan in plans if plan.get("status") == "active"), plans[0] if plans else None)
     if not active_plan:
         return {}
@@ -1811,4 +1818,4 @@ def list_security_audit(
     limit: int = 100, actor_id: str | None = None, role: str | None = None,
     action: str | None = None, status: str | None = None,
 ) -> dict[str, object]:
-    return {"audits": task_store.list_security_audits(limit, actor_id, role, action, status)}
+    return {"audits": get_persistence_stores().audit.list_security_audits(limit, actor_id, role, action, status)}

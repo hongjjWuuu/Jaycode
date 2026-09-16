@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from urllib.parse import unquote
 
 ROOT = Path(__file__).resolve().parents[1]
 SCANNED_ROOTS = ("README.md", "docs", "app", "web/src", "examples", "scripts", "tests")
@@ -57,7 +58,7 @@ def test_markdown_local_links_resolve() -> None:
     for path in (ROOT / "docs").rglob("*.md"):
         text = path.read_text(encoding="utf-8", errors="ignore")
         for match in link_pattern.finditer(text):
-            target = match.group(1).split("#", 1)[0].strip()
+            target = unquote(match.group(1).split("#", 1)[0].strip())
             if not target or target.startswith(("http://", "https://", "mailto:", "#", "codex:")):
                 continue
             if not (path.parent / target).resolve().exists():

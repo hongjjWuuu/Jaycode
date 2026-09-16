@@ -15,7 +15,7 @@ from app.graphs.collaboration_runner import run_collaboration_task
 from app.graphs.workflow_compiler import resume_task_workflow, run_task_workflow
 from app.harness.context import AgentExecutionContext
 from app.harness.runtime import harness_runtime
-from app.persistence.factory import task_store
+from app.persistence.factory import get_persistence_stores
 
 
 class LocalTaskWorker:
@@ -30,13 +30,13 @@ class LocalTaskWorker:
         self._stop.set()
 
     def run_once(self) -> bool:
-        task_store.recover_expired_task_ids()
-        record = task_store.claim_next_task(self.worker_id, self.lease_seconds)
+        get_persistence_stores().task.recover_expired_task_ids()
+        record = get_persistence_stores().task.claim_next_task(self.worker_id, self.lease_seconds)
         if not record:
             return False
         if int(record.get("attempt") or 0) > self.max_attempts:
             task_id = record["task_id"]
-            task_store.save_task_bundle(
+            get_persistence_stores().task.save_task_bundle(
                 task_id, "failed", None,
                 [("error", "failure", {"error_code": "WORKER_RETRY_LIMIT", "message": "Worker retry limit exceeded."})],
                 [{"event_id": f"evt_retry_limit_{task_id}_{record.get('attempt')}", "task_id": task_id, "type": "worker_crashed", "status": "failed", "content": "Worker retry limit exceeded."}],
@@ -48,14 +48,14 @@ class LocalTaskWorker:
         return True
 
     def run_forever(self) -> None:
-        task_store.register_worker(self.worker_id, os.getpid())
+        get_persistence_stores().task.register_worker(self.worker_id, os.getpid())
         try:
             while not self._stop.is_set():
                 if not self.run_once():
-                    task_store.heartbeat_worker(self.worker_id)
+                    get_persistence_stores().task.heartbeat_worker(self.worker_id)
                     self._stop.wait(self.poll_seconds)
         finally:
-            task_store.unregister_worker(self.worker_id)
+            get_persistence_stores().task.unregister_worker(self.worker_id)
 
     def _run_record(self, record: dict[str, Any]) -> None:
         task_id = str(record["task_id"])
@@ -63,13 +63,13 @@ class LocalTaskWorker:
 
         def heartbeat() -> None:
             while not heartbeat_stop.wait(max(1, self.lease_seconds // 3)):
-                if not task_store.heartbeat_task(task_id, self.worker_id, self.lease_seconds):
+                if not get_persistence_stores().task.heartbeat_task(task_id, self.worker_id, self.lease_seconds):
                     return
-                task_store.heartbeat_worker(self.worker_id, task_id)
+                get_persistence_stores().task.heartbeat_worker(self.worker_id, task_id)
 
         thread = threading.Thread(target=heartbeat, name=f"heartbeat-{task_id[-8:]}", daemon=True)
         thread.start()
-        variables = task_store.get_task_input(task_id)
+        variables = get_persistence_stores().task.get_task_input(task_id)
         variables.update({"request_id": record.get("request_id"), "actor_id": record.get("actor_id") or "system-agent", "role": record.get("role") or "system-agent"})
         runner_kind = variables.pop("_jaycode_runner", "workflow")
         if runner_kind == "collaboration":
@@ -86,9 +86,9 @@ class LocalTaskWorker:
         try:
             harness_runtime.run_graph(context, graph_runner, variables)
         except Exception as exc:  # noqa: BLE001 - worker boundary records failure in the runtime
-            current = task_store.get_task(task_id)
+            current = get_persistence_stores().task.get_task(task_id)
             if current and current.get("status") == "running":
-                task_store.save_task_bundle(
+                get_persistence_stores().task.save_task_bundle(
                     task_id,
                     "failed",
                     None,
@@ -100,7 +100,7 @@ class LocalTaskWorker:
         finally:
             heartbeat_stop.set()
             thread.join(timeout=1)
-            task_store.heartbeat_worker(self.worker_id)
+            get_persistence_stores().task.heartbeat_worker(self.worker_id)
 
 
 def main() -> None:

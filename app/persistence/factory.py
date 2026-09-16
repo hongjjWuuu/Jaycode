@@ -1,27 +1,48 @@
-"""Application-wide persistence store selection.
-
-All application layers should obtain persistence handles from this module.
-PostgreSQL remains deliberately fail-closed until every domain adapter has
-passed the shared store contract; selecting it must never create a mixed
-SQLite/PostgreSQL application.
-"""
+"""Application-wide persistence selection with an explicit all-domain bundle."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Any
 
 from app.core.config import settings
+from app.persistence.contracts import (
+    AuditStore,
+    BenchmarkStore,
+    LlmStore,
+    MarketplaceStore,
+    McpStore,
+    MemoryStore,
+    PromptStore,
+    RagStore,
+    ReviewStore,
+    SkillStore,
+    TaskStore,
+    WorkflowStore,
+    unsupported_postgres_domains,
+)
+
+
+class PersistenceConfigurationError(RuntimeError):
+    """The configured backend cannot safely serve every persistence domain."""
 
 
 @dataclass(frozen=True)
 class PersistenceStores:
-    """The three persistence domains currently exposed to application code."""
+    """All public persistence-domain handles for one configured backend."""
 
-    task: Any
-    memory: Any
-    rag: Any
+    task: TaskStore
+    workflow: WorkflowStore
+    review: ReviewStore
+    skill: SkillStore
+    mcp: McpStore
+    marketplace: MarketplaceStore
+    audit: AuditStore
+    memory: MemoryStore
+    llm: LlmStore
+    prompt: PromptStore
+    benchmark: BenchmarkStore
+    rag: RagStore
     backend: str
 
     def ping(self) -> None:
@@ -34,48 +55,56 @@ class PersistenceStores:
             conn.execute("SELECT 1").fetchone()
 
 
+def _sqlite_stores() -> PersistenceStores:
+    from app.persistence.memory_store import SQLiteMemoryStore
+    from app.persistence.rag_store import SQLiteRagStore
+    from app.persistence.sqlite_store import SQLiteTaskStore
+
+    task = SQLiteTaskStore()
+    memory = SQLiteMemoryStore(task.db_path)
+    rag = SQLiteRagStore(task.db_path)
+    return PersistenceStores(
+        task=task,
+        workflow=task,
+        review=task,
+        skill=task,
+        mcp=task,
+        marketplace=task,
+        audit=task,
+        memory=memory,
+        llm=task,
+        prompt=task,
+        benchmark=task,
+        rag=rag,
+        backend="sqlite",
+    )
+
+
+def _postgres_stores() -> PersistenceStores:
+    from app.persistence.postgres_config import validate_matching_postgres_targets
+
+    if not settings.database_url:
+        raise PersistenceConfigurationError("JAYCODE_PERSISTENCE_STORE=postgres requires DATABASE_URL")
+    validate_matching_postgres_targets(settings.database_url, settings.pgvector_database_url)
+    unsupported = unsupported_postgres_domains()
+    if unsupported:
+        details = ", ".join(f"{name}({contract.postgres_status})" for name, contract in unsupported.items())
+        raise PersistenceConfigurationError(
+            "PostgreSQL persistence is not ready; refusing mixed persistence. "
+            f"Not activation-ready domains: {details}."
+        )
+    # Stage 2 enables construction after each domain has a verified contract.
+    raise PersistenceConfigurationError("PostgreSQL persistence schema is not verified for activation.")
+
+
 @lru_cache(maxsize=1)
 def get_persistence_stores() -> PersistenceStores:
-    """Build the configured stores once per process, failing closed if partial."""
+    """Build one complete backend bundle; mixed SQLite/PostgreSQL is forbidden."""
     backend = settings.jaycode_persistence_store.strip().lower()
-    if backend not in {"sqlite", "postgres"}:
-        raise RuntimeError("JAYCODE_PERSISTENCE_STORE must be sqlite or postgres")
+    if backend == "sqlite":
+        if settings.jaycode_rag_store.strip().lower() not in {"sqlite", ""}:
+            raise PersistenceConfigurationError("SQLite persistence requires JAYCODE_RAG_STORE=sqlite.")
+        return _sqlite_stores()
     if backend == "postgres":
-        from app.persistence.postgres_config import validate_matching_postgres_targets
-
-        if not settings.database_url:
-            raise RuntimeError("JAYCODE_PERSISTENCE_STORE=postgres requires DATABASE_URL")
-        validate_matching_postgres_targets(settings.database_url, settings.pgvector_database_url)
-        raise RuntimeError(
-            "PostgreSQL persistence is not available: Task, Memory, RAG and application-domain "
-            "Store contracts are not all wired. Refusing mixed persistence."
-        )
-
-    from app.persistence.memory_store import memory_store
-    from app.persistence.rag_store import SQLiteRagStore
-    from app.persistence.sqlite_store import task_store
-
-    if settings.jaycode_rag_store.strip().lower() not in {"sqlite", ""}:
-        raise RuntimeError(
-            "SQLite persistence requires JAYCODE_RAG_STORE=sqlite; split SQLite/PostgreSQL "
-            "persistence is not supported."
-        )
-    rag = SQLiteRagStore(task_store.db_path)
-
-    return PersistenceStores(task=task_store, memory=memory_store, rag=rag, backend=backend)
-
-
-class StoreProxy:
-    """Lazy compatibility handle that resolves through the configured factory."""
-
-    def __init__(self, domain: str) -> None:
-        self._domain = domain
-
-    def __getattr__(self, name: str) -> Any:
-        store = getattr(get_persistence_stores(), self._domain)
-        return getattr(store, name)
-
-
-task_store = StoreProxy("task")
-memory_store = StoreProxy("memory")
-rag_store = StoreProxy("rag")
+        return _postgres_stores()
+    raise PersistenceConfigurationError("JAYCODE_PERSISTENCE_STORE must be sqlite or postgres")

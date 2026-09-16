@@ -24,7 +24,7 @@ class PostgresMemoryStore:
             raise RuntimeError("psycopg is required for PostgreSQL persistence") from exc
         return psycopg.connect(self.database_url, row_factory=dict_row, connect_timeout=10)
 
-    def init_schema(self) -> None:
+    def _legacy_init_schema(self) -> None:
         statements = (
             """CREATE TABLE IF NOT EXISTS memory_record (
                 memory_id TEXT PRIMARY KEY, actor_id TEXT, scope TEXT NOT NULL, scope_id TEXT NOT NULL,
@@ -51,6 +51,12 @@ class PostgresMemoryStore:
         with self._connect() as conn:
             for statement in statements:
                 conn.execute(statement)
+
+    def init_schema(self) -> None:
+        """Use the single versioned PostgreSQL schema migration entry point."""
+        from app.persistence.postgres_store import PostgresTaskStore
+
+        PostgresTaskStore(self.database_url).init_full_schema()
 
     def extract_candidates(
         self,

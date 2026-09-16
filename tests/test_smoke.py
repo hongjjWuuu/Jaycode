@@ -341,7 +341,7 @@ def test_postgres_store_factory_fails_closed_instead_of_mixing_sqlite(monkeypatc
         try:
             get_persistence_stores()
         except RuntimeError as exc:
-            assert "Refusing mixed persistence" in str(exc)
+            assert "refusing mixed persistence" in str(exc).lower()
         else:
             raise AssertionError("partial PostgreSQL wiring must fail closed")
     finally:

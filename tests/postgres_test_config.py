@@ -21,6 +21,8 @@ def isolated_postgres_url() -> str:
         return ""
 
     parsed = urlsplit(database_url)
+    if parsed.scheme not in {"postgres", "postgresql"}:
+        raise RuntimeError("PostgreSQL contract test URL must use postgres or postgresql scheme.")
     host = (parsed.hostname or "").lower()
     database = unquote(parsed.path.lstrip("/"))
     if host not in {"localhost", "127.0.0.1", "::1"}:

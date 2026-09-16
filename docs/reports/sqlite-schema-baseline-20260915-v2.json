@@ -1,0 +1,2380 @@
+{
+  "format": "jaycode-sqlite-schema-inventory-v1",
+  "source_name": "dev_agent_studio.db",
+  "user_version": 0,
+  "schema_version_metadata": [],
+  "table_count": 35,
+  "tables": {
+    "agent_task": {
+      "row_count": 63,
+      "columns": [
+        {
+          "name": "task_id",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 1
+        },
+        {
+          "name": "goal",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "project_path",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "status",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "updated_at",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "final_report",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "request_id",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "actor_id",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "role",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "idempotency_key",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "execution_version",
+          "type": "INTEGER",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "retry_count",
+          "type": "INTEGER",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "resume_count",
+          "type": "INTEGER",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "input_json",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "worker_id",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "lease_until",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "heartbeat_at",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "attempt",
+          "type": "INTEGER",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "error_code",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "error_message",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "failed_at",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        }
+      ],
+      "foreign_keys": []
+    },
+    "agent_task_artifact": {
+      "row_count": 194,
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "not_null": false,
+          "primary_key_position": 1
+        },
+        {
+          "name": "task_id",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "artifact_type",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "name",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "content_json",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "execution_version",
+          "type": "INTEGER",
+          "not_null": true,
+          "primary_key_position": 0
+        }
+      ],
+      "foreign_keys": []
+    },
+    "agent_task_event": {
+      "row_count": 613,
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "not_null": false,
+          "primary_key_position": 1
+        },
+        {
+          "name": "event_id",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "task_id",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "event_type",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "node",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "agent",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "status",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "content",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "data_json",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "event_seq",
+          "type": "INTEGER",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "execution_version",
+          "type": "INTEGER",
+          "not_null": true,
+          "primary_key_position": 0
+        }
+      ],
+      "foreign_keys": []
+    },
+    "agent_task_node_state": {
+      "row_count": 5,
+      "columns": [
+        {
+          "name": "task_id",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 1
+        },
+        {
+          "name": "node_id",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 2
+        },
+        {
+          "name": "state",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "attempt",
+          "type": "INTEGER",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "error_message",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "output_json",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "started_at",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "finished_at",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "updated_at",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        }
+      ],
+      "foreign_keys": []
+    },
+    "agent_worker": {
+      "row_count": 0,
+      "columns": [
+        {
+          "name": "worker_id",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 1
+        },
+        {
+          "name": "pid",
+          "type": "INTEGER",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "started_at",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "last_heartbeat",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "status",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "active_task_id",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "restart_count",
+          "type": "INTEGER",
+          "not_null": true,
+          "primary_key_position": 0
+        }
+      ],
+      "foreign_keys": []
+    },
+    "benchmark_comparison": {
+      "row_count": 0,
+      "columns": [
+        {
+          "name": "comparison_id",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 1
+        },
+        {
+          "name": "current_run_id",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "baseline_run_id",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "regression_status",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "threshold_json",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "delta_json",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        }
+      ],
+      "foreign_keys": []
+    },
+    "benchmark_result": {
+      "row_count": 0,
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "not_null": false,
+          "primary_key_position": 1
+        },
+        {
+          "name": "run_id",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "case_id",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "server_id",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "tool_name",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "iteration",
+          "type": "INTEGER",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "status",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "latency_ms",
+          "type": "INTEGER",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "error_message",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "input_json",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "output_json",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        }
+      ],
+      "foreign_keys": []
+    },
+    "benchmark_run": {
+      "row_count": 0,
+      "columns": [
+        {
+          "name": "run_id",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 1
+        },
+        {
+          "name": "name",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "benchmark_type",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "status",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "config_json",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "summary_json",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "started_at",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "finished_at",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        }
+      ],
+      "foreign_keys": []
+    },
+    "human_review_action": {
+      "row_count": 36,
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "not_null": false,
+          "primary_key_position": 1
+        },
+        {
+          "name": "task_id",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "action",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "comment",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        }
+      ],
+      "foreign_keys": []
+    },
+    "learning_plan": {
+      "row_count": 0,
+      "columns": [
+        {
+          "name": "plan_id",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 1
+        },
+        {
+          "name": "task_id",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "topic",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "level",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "status",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "plan_json",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "quiz_json",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "report_markdown",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "updated_at",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        }
+      ],
+      "foreign_keys": []
+    },
+    "llm_call_trace": {
+      "row_count": 60,
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "not_null": false,
+          "primary_key_position": 1
+        },
+        {
+          "name": "trace_id",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "agent",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "prompt_version",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "model",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "input_json",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "output_text",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "fallback_used",
+          "type": "INTEGER",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "error_message",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "latency_ms",
+          "type": "INTEGER",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "token_usage_json",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "request_id",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "actor_id",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "role",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        }
+      ],
+      "foreign_keys": []
+    },
+    "llm_prompt_version": {
+      "row_count": 19,
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "not_null": false,
+          "primary_key_position": 1
+        },
+        {
+          "name": "agent",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "prompt_family",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "prompt_version",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "title",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "description",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "system_suffix",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "is_active",
+          "type": "INTEGER",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "updated_at",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        }
+      ],
+      "foreign_keys": []
+    },
+    "marketplace_install_snapshot": {
+      "row_count": 0,
+      "columns": [
+        {
+          "name": "snapshot_id",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 1
+        },
+        {
+          "name": "package_id",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "package_type",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "manifest_json",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "state_json",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        }
+      ],
+      "foreign_keys": []
+    },
+    "mcp_server_config": {
+      "row_count": 1,
+      "columns": [
+        {
+          "name": "server_id",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 1
+        },
+        {
+          "name": "name",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "transport",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "command",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "args_json",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "env_json",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "url",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "enabled",
+          "type": "INTEGER",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "status",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "last_error",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "updated_at",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        }
+      ],
+      "foreign_keys": []
+    },
+    "mcp_tool_approval": {
+      "row_count": 0,
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "not_null": false,
+          "primary_key_position": 1
+        },
+        {
+          "name": "agent_code",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "server_id",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "tool_name",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "allowed",
+          "type": "INTEGER",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "reason",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "updated_at",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        }
+      ],
+      "foreign_keys": []
+    },
+    "mcp_tool_call_log": {
+      "row_count": 0,
+      "columns": [
+        {
+          "name": "call_id",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 1
+        },
+        {
+          "name": "server_id",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "tool_name",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "agent_code",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "input_json",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "output_json",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "status",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "error_message",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "latency_ms",
+          "type": "INTEGER",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "request_id",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "actor_id",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "role",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "command_summary",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "exit_code",
+          "type": "INTEGER",
+          "not_null": false,
+          "primary_key_position": 0
+        }
+      ],
+      "foreign_keys": []
+    },
+    "mcp_tool_registry": {
+      "row_count": 0,
+      "columns": [
+        {
+          "name": "tool_id",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 1
+        },
+        {
+          "name": "server_id",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "name",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "description",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "input_schema_json",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "enabled",
+          "type": "INTEGER",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "status",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "discovered_at",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "updated_at",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        }
+      ],
+      "foreign_keys": []
+    },
+    "memory_lifecycle_event": {
+      "row_count": 0,
+      "columns": [
+        {
+          "name": "event_id",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 1
+        },
+        {
+          "name": "memory_id",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "action",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "actor_id",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "metadata_json",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        }
+      ],
+      "foreign_keys": []
+    },
+    "memory_record": {
+      "row_count": 0,
+      "columns": [
+        {
+          "name": "memory_id",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 1
+        },
+        {
+          "name": "scope",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "scope_id",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "memory_type",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "memory_key",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "content",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "content_hash",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "confidence",
+          "type": "REAL",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "status",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "source_type",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "source_ref",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "extraction_source",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "quality_score",
+          "type": "REAL",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "quality_reasons",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "retention_policy",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "expires_at",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "conflict_with",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "rag_path",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "updated_at",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "confirmed_at",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "source_task_id",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "confirmed_by",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "superseded_by",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "revoked_at",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        }
+      ],
+      "foreign_keys": []
+    },
+    "platform_approval": {
+      "row_count": 0,
+      "columns": [
+        {
+          "name": "approval_id",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 1
+        },
+        {
+          "name": "object_type",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "object_id",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "version_id",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "actor_id",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "decision",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "reason",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        }
+      ],
+      "foreign_keys": []
+    },
+    "platform_query": {
+      "row_count": 0,
+      "columns": [
+        {
+          "name": "query_id",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 1
+        },
+        {
+          "name": "query_type",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "actor_id",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "task_id",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "input_json",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "result_json",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "score_json",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        }
+      ],
+      "foreign_keys": []
+    },
+    "platform_version": {
+      "row_count": 0,
+      "columns": [
+        {
+          "name": "version_id",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 1
+        },
+        {
+          "name": "object_type",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "object_id",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "version",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "status",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "manifest_json",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "created_by",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "activated_at",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        }
+      ],
+      "foreign_keys": []
+    },
+    "plugin_marketplace_install": {
+      "row_count": 0,
+      "columns": [
+        {
+          "name": "install_id",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 1
+        },
+        {
+          "name": "package_id",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "name",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "package_type",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "version",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "source_url",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "status",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "summary_json",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "manifest_json",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "error_message",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "installed_at",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "approval_status",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "approved_by",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "approved_at",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "approval_reason",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        }
+      ],
+      "foreign_keys": []
+    },
+    "rag_chunk": {
+      "row_count": 3,
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "not_null": false,
+          "primary_key_position": 1
+        },
+        {
+          "name": "collection",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "chunk_id",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "path",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "content",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "document_version",
+          "type": "INTEGER",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "metadata_json",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        }
+      ],
+      "foreign_keys": []
+    },
+    "rag_document": {
+      "row_count": 3,
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "not_null": false,
+          "primary_key_position": 1
+        },
+        {
+          "name": "collection",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "path",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "size",
+          "type": "INTEGER",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "content_hash",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "version",
+          "type": "INTEGER",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "is_current",
+          "type": "INTEGER",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "valid_to",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "acl_json",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        }
+      ],
+      "foreign_keys": []
+    },
+    "rag_evaluation_run": {
+      "row_count": 0,
+      "columns": [
+        {
+          "name": "run_id",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 1
+        },
+        {
+          "name": "collection",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "actor_id",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "case_count",
+          "type": "INTEGER",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "hit_count",
+          "type": "INTEGER",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "recall_at_8",
+          "type": "REAL",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "mrr",
+          "type": "REAL",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "result_json",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        }
+      ],
+      "foreign_keys": []
+    },
+    "rag_gold_case": {
+      "row_count": 0,
+      "columns": [
+        {
+          "name": "case_id",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 1
+        },
+        {
+          "name": "collection",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "question",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "expected_chunk_ids_json",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "expected_paths_json",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "expected_keywords_json",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "metadata_json",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "enabled",
+          "type": "INTEGER",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "updated_at",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        }
+      ],
+      "foreign_keys": []
+    },
+    "schema_migration": {
+      "row_count": 2,
+      "columns": [
+        {
+          "name": "version",
+          "type": "INTEGER",
+          "not_null": false,
+          "primary_key_position": 1
+        },
+        {
+          "name": "name",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "applied_at",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        }
+      ],
+      "foreign_keys": []
+    },
+    "security_audit_log": {
+      "row_count": 121,
+      "columns": [
+        {
+          "name": "audit_id",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 1
+        },
+        {
+          "name": "request_id",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "actor_id",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "role",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "action",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "resource_type",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "resource_id",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "status",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "metadata_json",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        }
+      ],
+      "foreign_keys": []
+    },
+    "skill_approval": {
+      "row_count": 12,
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "not_null": false,
+          "primary_key_position": 1
+        },
+        {
+          "name": "skill_code",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "agent_code",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "allowed",
+          "type": "INTEGER",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "reason",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "updated_at",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        }
+      ],
+      "foreign_keys": []
+    },
+    "skill_execution_log": {
+      "row_count": 2,
+      "columns": [
+        {
+          "name": "log_id",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 1
+        },
+        {
+          "name": "skill_code",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "agent_code",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "task_id",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "input_json",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "output_json",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "status",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "error_message",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "latency_ms",
+          "type": "INTEGER",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "request_id",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "actor_id",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "role",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        }
+      ],
+      "foreign_keys": []
+    },
+    "skill_plugin": {
+      "row_count": 2,
+      "columns": [
+        {
+          "name": "plugin_id",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 1
+        },
+        {
+          "name": "name",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "version",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "source_type",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "source_url",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "author",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "description",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "enabled",
+          "type": "INTEGER",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "installed_at",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "updated_at",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        }
+      ],
+      "foreign_keys": []
+    },
+    "skill_registry": {
+      "row_count": 10,
+      "columns": [
+        {
+          "name": "skill_code",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 1
+        },
+        {
+          "name": "plugin_id",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "name",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "description",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "category",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "execution_type",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "permissions_json",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "permission_levels_json",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "risk_level",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "input_schema_json",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "output_schema_json",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "default_input_json",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "dependencies_json",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "tests_json",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "version",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "entrypoint",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "source_format",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "contract_json",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "enabled",
+          "type": "INTEGER",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "updated_at",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        }
+      ],
+      "foreign_keys": []
+    },
+    "skill_version_snapshot": {
+      "row_count": 10,
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "not_null": false,
+          "primary_key_position": 1
+        },
+        {
+          "name": "skill_code",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "plugin_id",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "version",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "snapshot_json",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        }
+      ],
+      "foreign_keys": []
+    },
+    "workflow_definition": {
+      "row_count": 3,
+      "columns": [
+        {
+          "name": "workflow_id",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 1
+        },
+        {
+          "name": "name",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "description",
+          "type": "TEXT",
+          "not_null": false,
+          "primary_key_position": 0
+        },
+        {
+          "name": "nodes_json",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "edges_json",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        },
+        {
+          "name": "updated_at",
+          "type": "TEXT",
+          "not_null": true,
+          "primary_key_position": 0
+        }
+      ],
+      "foreign_keys": []
+    }
+  },
+  "content_included": false
+}

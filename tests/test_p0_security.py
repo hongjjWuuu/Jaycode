@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import SimpleNamespace
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import pytest
@@ -70,6 +71,10 @@ def test_marketplace_install_requires_approval(monkeypatch: pytest.MonkeyPatch) 
     manifest = {"package_id": "test-package", "name": "Test", "package_type": "benchmark_pack", "version": "1"}
     monkeypatch.setattr(installer, "_load_manifest", lambda _: dict(manifest))
     monkeypatch.setattr(installer, "_validate_manifest", lambda _: None)
-    monkeypatch.setattr(installer.task_store, "get_latest_marketplace_install", lambda _: {"approval_status": "pending"})
+    monkeypatch.setattr(
+        installer,
+        "get_persistence_stores",
+        lambda: SimpleNamespace(marketplace=SimpleNamespace(get_latest_marketplace_install=lambda _: {"approval_status": "pending"})),
+    )
     with pytest.raises(PermissionError, match="approved"):
         installer.install_marketplace_package("local-test")

@@ -12,7 +12,7 @@ from typing import Any
 
 from app.core.config import settings
 from app.persistence.postgres_store import PostgresTaskStore
-from app.persistence.sqlite_store import task_store
+from app.persistence.sqlite_path import resolve_sqlite_path
 
 
 def _json_value(value: Any) -> Any:
@@ -77,7 +77,7 @@ def _hash_sorted(values: list[str]) -> str:
 
 def backup_sqlite(destination: Path, source: Path | None = None) -> dict[str, Any]:
     """Create a consistent, non-overwriting SQLite backup and adjacent manifest."""
-    source_path = source or task_store.db_path
+    source_path = source or resolve_sqlite_path()
     destination = destination.resolve()
     manifest_path = destination.with_suffix(destination.suffix + ".manifest.json")
     if destination.exists() or manifest_path.exists():
@@ -123,14 +123,15 @@ def check() -> dict[str, object]:
         with postgres.connection() as conn:
             conn.execute("SELECT 1").fetchone()
         return {"configured_store": store, "postgres_reachable": True, "migration": "not_run"}
-    with task_store._connect() as conn:
+    source_path = resolve_sqlite_path()
+    with sqlite3.connect(f"file:{source_path.resolve().as_posix()}?mode=ro", uri=True) as conn:
         conn.execute("SELECT 1").fetchone()
     return {"configured_store": store, "sqlite_readable": True, "migration": "not_run"}
 
 
 def export_sqlite(destination: Path, source: Path | None = None) -> dict[str, Any]:
     """Export every user table from a read-only SQLite snapshot without overwrite."""
-    source_path = source or task_store.db_path
+    source_path = source or resolve_sqlite_path()
     destination = destination.resolve()
     if destination.exists():
         raise FileExistsError(f"Export destination already exists: {destination}")

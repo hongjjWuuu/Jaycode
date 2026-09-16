@@ -7,7 +7,7 @@ from uuid import uuid4
 from app.core.config import settings
 from app.core.security import execution_auth_context
 from app.harness.events import utc_now_iso
-from app.persistence.factory import rag_store, task_store
+from app.persistence.factory import get_persistence_stores
 from app.providers.llm_provider import llm_provider
 from app.skills.base import SkillContext
 from app.skills.builtin import builtin_plugin
@@ -20,7 +20,7 @@ from app.skills.sandbox import python_skill_sandbox_status, run_python_skill_san
 # 光有内存里的 skill_registry 还不够
 # 前端页面、审批管理、版本管理、执行日志这些功能都需要数据库里有 Skill 记录。
 def ensure_builtin_skills_seeded() -> None:
-    task_store.seed_builtin_skills(builtin_plugin(), skill_registry.list_skills())
+    get_persistence_stores().skill.seed_builtin_skills(builtin_plugin(), skill_registry.list_skills())
 
 
 # 查数据库中的 Skill
@@ -46,7 +46,7 @@ def execute_skill(
 
     # 不是 registry 里有就能用
     # 必须数据库里也有记录
-    skill = task_store.get_skill(skill_code)
+    skill = get_persistence_stores().skill.get_skill(skill_code)
     if not skill:
         raise KeyError(f"Skill not found: {skill_code}")
     # Skill 即使存在，也可能被管理员禁用
@@ -54,7 +54,7 @@ def execute_skill(
         raise PermissionError(f"Skill disabled: {skill_code}")
     permissions = skill.get("permissions") if isinstance(skill.get("permissions"), list) else []
     # 如果 Skill 带有权限要求，而当前 agent_code 没审批，就不能执行
-    approval = task_store.get_skill_approval(skill_code, agent_code)
+    approval = get_persistence_stores().skill.get_skill_approval(skill_code, agent_code)
     if permissions and not (approval and approval.get("allowed")):
         raise PermissionError(f"Skill `{skill_code}` is not approved for agent `{agent_code}`.")
     
@@ -88,7 +88,7 @@ def execute_skill(
             # 路线 B：没注册到 registry 的声明式 Skill
             output = _execute_declarative_skill(skill, payload)
         latency_ms = int((time.perf_counter() - started) * 1000)
-        task_store.save_skill_execution_log(
+        get_persistence_stores().skill.save_skill_execution_log(
             {
                 "log_id": log_id,
                 "skill_code": skill_code,
@@ -115,7 +115,7 @@ def execute_skill(
     except Exception as exc:
         latency_ms = int((time.perf_counter() - started) * 1000)
         # 保存成功日志,这让 Skill 执行是可审计的，不是黑盒
-        task_store.save_skill_execution_log(
+        get_persistence_stores().skill.save_skill_execution_log(
             {
                 "log_id": log_id,
                 "skill_code": skill_code,
@@ -221,20 +221,20 @@ def _missing_dependencies(skill: dict[str, Any]) -> list[str]:
         if dep_type == "mcp_tool":
             if ":" in dep_ref:
                 server_id, tool_name = dep_ref.split(":", 1)
-                found = task_store.get_mcp_tool(server_id, tool_name)
+                found = get_persistence_stores().mcp.get_mcp_tool(server_id, tool_name)
             else:
-                found = any(tool.get("name") == dep_ref for tool in task_store.list_mcp_tools())
+                found = any(tool.get("name") == dep_ref for tool in get_persistence_stores().mcp.list_mcp_tools())
             if not found:
                 missing.append(f"mcp_tool:{dep_ref}")
         elif dep_type == "rag_collection":
-            if not rag_store.list_documents(dep_ref):
+            if not get_persistence_stores().rag.list_documents(dep_ref):
                 missing.append(f"rag_collection:{dep_ref}")
         elif dep_type == "prompt_version":
             agent = str(dependency.get("agent") or "reporter")
-            if not task_store.get_prompt_version(agent, dep_ref):
+            if not get_persistence_stores().prompt.get_prompt_version(agent, dep_ref):
                 missing.append(f"prompt_version:{agent}/{dep_ref}")
         elif dep_type == "skill":
-            if not task_store.get_skill(dep_ref):
+            if not get_persistence_stores().skill.get_skill(dep_ref):
                 missing.append(f"skill:{dep_ref}")
         elif dep_type == "llm_model":
             if not llm_provider.enabled:

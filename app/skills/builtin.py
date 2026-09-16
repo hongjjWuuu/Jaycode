@@ -16,7 +16,7 @@ from app.agents.project_tools import (
 )
 from app.agents.rag_tools import process_knowledge
 from app.agents.workflow_tools import run_workflow
-from app.persistence.factory import rag_store
+from app.persistence.factory import get_persistence_stores
 from app.providers.mcp_provider import mcp_provider
 from app.skills.base import SkillContext
 
@@ -116,7 +116,7 @@ class RagProcessSkill(BuiltinSkill):
         ingest_result: dict[str, Any] = {"enabled": False, "collection": collection}
 
         if ingest:
-            saved = rag_store.ingest(collection, result.get("documents", []), result.get("chunks", []))
+            saved = get_persistence_stores().rag.ingest(collection, result.get("documents", []), result.get("chunks", []))
             ingest_result = {
                 "enabled": True,
                 "collection": collection,

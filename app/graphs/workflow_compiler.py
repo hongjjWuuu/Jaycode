@@ -10,7 +10,7 @@ from app.agents.code_review_tools import review_single_file
 from app.graphs.project_analyzer_graph import project_analyzer_graph
 from app.graphs.studio_graphs import code_review_graph, learning_coach_graph, rag_process_graph
 from app.harness.events import utc_now_iso
-from app.persistence.factory import rag_store
+from app.persistence.factory import get_persistence_stores
 from app.providers.mcp_provider import mcp_provider
 from app.skills.executor import execute_skill
 
@@ -907,7 +907,7 @@ def _execute_node(node: dict[str, Any], state: WorkflowState, outputs: dict[str,
         # 查询知识库
         collection = str(config.get("collection") or "default")
         limit = int(config.get("top_k") or 5)
-        results = rag_store.query(collection, goal, limit)
+        results = get_persistence_stores().rag.query(collection, goal, limit)
         text = f"Knowledge collection {collection} returned {len(results)} result(s)."
         return {"collection": collection, "results": results}, {
             "agent_output": _agent_output(node, "rag", text),
@@ -1016,7 +1016,7 @@ def _run_agent_node(
         should_ingest = bool(config.get("ingest", True))
         collection = str(config.get("collection") or "project-memory")
         if should_ingest:
-            saved = rag_store.ingest(collection, result.get("documents", []), result.get("chunks", []))
+            saved = get_persistence_stores().rag.ingest(collection, result.get("documents", []), result.get("chunks", []))
             result = {
                 **result,
                 "ingest": {

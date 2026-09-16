@@ -14,7 +14,7 @@ from uuid import uuid4
 
 from app.core.config import settings
 from app.marketplace.catalog import get_builtin_manifest
-from app.persistence.factory import rag_store, task_store
+from app.persistence.factory import get_persistence_stores
 from app.providers.llm_provider import llm_provider
 from app.skills.contract import validate_skill_contract
 
@@ -37,7 +37,7 @@ def preview_marketplace_package(source_url: str) -> dict[str, Any]:
     manifest = _load_manifest(source_url)
     _validate_manifest(manifest)
     summary = _summarize_manifest(manifest)
-    task_store.save_marketplace_install(
+    get_persistence_stores().marketplace.save_marketplace_install(
         {
             "install_id": f"mpi_{uuid4().hex}",
             "package_id": str(manifest.get("package_id") or manifest.get("name")),
@@ -59,7 +59,7 @@ def install_marketplace_package(source_url: str) -> dict[str, Any]:
     _validate_manifest(manifest)
     package_type = str(manifest["package_type"])
     package_id = str(manifest.get("package_id") or manifest.get("name"))
-    latest = task_store.get_latest_marketplace_install(package_id)
+    latest = get_persistence_stores().marketplace.get_latest_marketplace_install(package_id)
     if not latest or latest.get("approval_status") != "approved":
         raise PermissionError("Marketplace package must be approved before installation")
     install_id = f"mpi_{uuid4().hex}"
@@ -71,7 +71,7 @@ def install_marketplace_package(source_url: str) -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001 - persist failed installation status before re-raising
         status = "failed"
         error_message = str(exc)
-    record = task_store.save_marketplace_install(
+    record = get_persistence_stores().marketplace.save_marketplace_install(
         {
             "install_id": install_id,
             "package_id": str(manifest.get("package_id") or manifest.get("name")),
@@ -94,7 +94,7 @@ def uninstall_marketplace_package(package_id: str) -> dict[str, Any]:
     package_id = package_id.strip()
     if not package_id:
         raise ValueError("package_id is required")
-    latest = task_store.get_latest_marketplace_install(package_id)
+    latest = get_persistence_stores().marketplace.get_latest_marketplace_install(package_id)
     if not latest:
         raise FileNotFoundError(f"Marketplace package is not installed: {package_id}")
     if latest.get("status") == "uninstalled":
@@ -104,7 +104,7 @@ def uninstall_marketplace_package(package_id: str) -> dict[str, Any]:
     manifest = latest.get("manifest") if isinstance(latest.get("manifest"), dict) else {}
     summary: dict[str, Any]
     if package_type == "skill_pack":
-        removed = task_store.uninstall_skill_plugin(package_id)
+        removed = get_persistence_stores().skill.uninstall_skill_plugin(package_id)
         if not removed:
             raise FileNotFoundError(f"Skill plugin not found: {package_id}")
         summary = {"removed": True, **removed}
@@ -115,7 +115,7 @@ def uninstall_marketplace_package(package_id: str) -> dict[str, Any]:
             "message": "Package inventory was marked uninstalled. Shared artifacts are kept to avoid deleting user data.",
         }
 
-    return task_store.save_marketplace_install(
+    return get_persistence_stores().marketplace.save_marketplace_install(
         {
             "install_id": f"mpi_{uuid4().hex}",
             "package_id": package_id,
@@ -146,13 +146,13 @@ def _apply_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
             "enabled": True,
         }
         skills = [_normalize_skill(plugin["plugin_id"], skill) for skill in manifest.get("skills") or []]
-        task_store.seed_builtin_skills(plugin, skills)
+        get_persistence_stores().skill.seed_builtin_skills(plugin, skills)
         summary["installed_skills"] = [skill["code"] for skill in skills]
     elif package_type == "rag_pack":
         saved = []
         for note in manifest.get("rag_notes") or []:
             saved.append(
-                rag_store.add_note(
+                get_persistence_stores().rag.add_note(
                     str(note.get("collection") or "project-memory"),
                     str(note.get("path") or f"marketplace/{manifest.get('package_id')}"),
                     str(note.get("content") or ""),
@@ -160,13 +160,13 @@ def _apply_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
             )
         summary["saved_notes"] = saved
     elif package_type == "mcp_pack":
-        servers = [task_store.save_mcp_server(server) for server in manifest.get("mcp_servers") or []]
+        servers = [get_persistence_stores().mcp.save_mcp_server(server) for server in manifest.get("mcp_servers") or []]
         summary["registered_servers"] = [server["server_id"] for server in servers]
     elif package_type == "workflow_pack":
         workflows = []
         for workflow in manifest.get("workflows") or []:
             workflows.append(
-                task_store.save_workflow(
+                get_persistence_stores().workflow.save_workflow(
                     str(workflow.get("workflow_id") or f"wf_{uuid4().hex}"),
                     str(workflow.get("name") or "Marketplace Workflow"),
                     workflow.get("description"),
