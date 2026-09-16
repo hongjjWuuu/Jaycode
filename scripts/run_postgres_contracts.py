@@ -61,6 +61,7 @@ def _run() -> int:
         created = True
         environment = os.environ.copy()
         environment["JAYCODE_TEST_DATABASE_URL"] = test_url
+        environment["JAYCODE_MIGRATION_TARGET_URL"] = test_url
         environment["DATABASE_URL"] = test_url
         environment["PGVECTOR_DATABASE_URL"] = test_url
         environment["JAYCODE_PERSISTENCE_STORE"] = "postgres"
@@ -71,6 +72,7 @@ def _run() -> int:
             "-m",
             "pytest",
             "-q",
+            "tests/test_postgres_migration_rehearsal.py",
             "tests/test_postgres_store.py",
             "tests/test_postgres_memory_store.py",
             "tests/test_postgres_rag_store.py",
