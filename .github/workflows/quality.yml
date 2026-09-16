@@ -34,7 +34,14 @@ jobs:
       - name: Scan legacy markers
         shell: bash
         run: |
-          ! grep -RniE 'F:/JayAgent/Jaycode|F:\\JayAgent\\Jaycode|DevAgent|devagent|x_devagent' README.md docs app web/src examples scripts tests
+          ! grep -RniE \
+            --exclude-dir=.git \
+            --exclude-dir=__pycache__ \
+            --exclude-dir=node_modules \
+            --exclude-dir=dist \
+            --exclude='*.pyc' \
+            'F:/JayAgent/Jaycode|F:\\JayAgent\\Jaycode|DevAgent|devagent|x_devagent' \
+            README.md docs app web/src examples scripts tests
 
   postgres-store:
     runs-on: ubuntu-latest
