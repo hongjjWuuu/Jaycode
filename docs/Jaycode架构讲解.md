@@ -2,6 +2,8 @@
 
 > 这份文档只讲一件事：这个项目的整体架构是怎么组织的。
 > 它不承担学习路线职责，学习顺序请看另一份手册。
+>
+> 当前部署注记（2026-09-17）：持久化层通过 `PersistenceStores` 接入 PostgreSQL `jayagent_studio`，并以同库 pgvector 承载 RAG；图中 SQLite 描述代表兼容/迁移来源，而不是当前权威运行库。
 
 ---
 
@@ -490,4 +492,3 @@ flowchart TD
   A1 --> E
   A1 --> D
 ```
-

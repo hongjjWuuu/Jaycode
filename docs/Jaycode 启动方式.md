@@ -1,118 +1,88 @@
 # Jaycode 启动方式
 
-当前项目的主入口是：
+> 当前运行架构（2026-09-17）：API、Worker、Memory、RAG 与业务 Store 均连接 PostgreSQL `jayagent_studio`；pgvector 与主业务库使用同一连接目标。`data/dev_agent_studio.db` 仅保留为迁移前历史库和恢复依据，**不是**当前服务的写入目标。
 
-```text
-.\app\main.py
-```
+## 日常启动
 
-## 一、最简单启动版
+不需要让 API 或 Worker 永久在线；需要使用 Web/API 时启动 API，需要处理队列任务时启动 Worker。PostgreSQL 容器必须在二者之前可用。
 
-适合先确认后端能否正常启动。
+### 1. 启动 PostgreSQL / pgvector
 
-### 1. 进入项目目录
+启动 Docker Desktop 后，在项目根目录运行：
 
 ```powershell
-cd /d .
+cd D:\JayAgent\Jaycode
+docker compose -f docker-compose.pgvector.yml up -d
+docker compose -f docker-compose.pgvector.yml ps
 ```
 
-如果你在 PowerShell 里，也可以用：
+确认 `pgvector` 服务为运行/健康状态。Docker 容器显示的旧名称 `dev-agent-studio-pgvector` 只是容器标识，不影响实际数据库 `jayagent_studio`。
+
+### 2. 启动 API
+
+打开终端 A：
 
 ```powershell
-Set-Location .
-```
-
-### 2. 启动后端
-
-```powershell
+cd D:\JayAgent\Jaycode
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8100
 ```
 
-### 3. 检查健康状态
+API 启动会读取 `.env` 中已配置的 PostgreSQL 连接；连接、Schema 或 pgvector 不可用时会明确启动失败，不会写回 SQLite。
 
-打开：
+### 3. 启动 Worker
 
-```text
-http://127.0.0.1:8100/health
-```
-
-如果返回类似下面内容，说明后端已正常启动：
-
-```json
-{
-  "status": "ok",
-  "app": "Jaycode",
-  "env": "dev"
-}
-```
-
-## 二、推荐启动版
-
-如果你想一次性完成前后端启动，使用：
+需要执行队列任务时，另开终端 B：
 
 ```powershell
-cd .
-powershell -ExecutionPolicy Bypass -File .\setup-and-start.ps1
+cd D:\JayAgent\Jaycode
+.\.venv\Scripts\python.exe -m app.harness.worker --worker-id local-worker
 ```
 
-这个脚本会依次做：
+Worker 正常轮询时通常没有持续输出。Worker 未运行不会丢任务，但新任务会保持 `queued`，直到有 Worker 领取。
 
-1. 检查 `.env`
-2. 检查必需配置
-3. 准备 Python 环境
-4. 安装 Python 依赖
-5. 检查 Node.js 和 npm
-6. 安装前端依赖
-7. 构建前端 `web/dist`
-8. 启动后端
-9. 通过 FastAPI 托管前端页面
+### 4. 验证并访问
 
-启动成功后访问：
+在第三个 PowerShell 窗口运行：
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8100/health
+Invoke-RestMethod http://127.0.0.1:8100/ready
+```
+
+两者应分别返回 `status: ok` 与 `status: ready`。然后访问：
 
 ```text
 http://127.0.0.1:8100/
 ```
 
-## 三、前端单独启动
+API 文档位于 `http://127.0.0.1:8100/docs`。
 
-如果你只想调试前端：
+## 前端开发模式
+
+后端仍按上面的 API 步骤启动；需要热更新 React 页面时再开启 Vite：
 
 ```powershell
-cd web
-npm install
+cd D:\JayAgent\Jaycode\web
+npm ci
 npm run dev -- --host 127.0.0.1 --port 5173
 ```
 
-访问：
+访问 `http://127.0.0.1:5173/`。正常使用已构建的前端时不需要启动 Vite，FastAPI 会托管 `web/dist`。
 
-```text
-http://127.0.0.1:5173/
+## 停止与恢复原则
+
+- 停止 API 或 Worker：在各自终端按 `Ctrl+C`。
+- PostgreSQL 容器可继续运行；下次启动会继续使用 `jayagent_studio`，**无需再次迁移**。
+- 若需要停止容器：`docker compose -f docker-compose.pgvector.yml stop`。不要运行会删除卷的命令。
+- PostgreSQL 已是权威库。发生故障时不要只修改 `.env` 切回 SQLite；应先冻结写入、保留现状并执行数据对账与恢复方案。
+
+## 可选：由 API 进程守护 Worker
+
+若希望只启动 API 即由其创建并守护 Worker，可在维护后审慎设置 `.env`：
+
+```env
+JAYCODE_WORKER_SUPERVISOR_ENABLED=true
+JAYCODE_WORKER_COUNT=1
 ```
 
-## 四、完整功能需要什么
-
-如果你想启用更多能力，通常需要按这个顺序准备：
-
-1. 填好真实的 `OPENAI_API_KEY`
-2. 确认 `OPENAI_BASE_URL` 和 `JAYCODE_AGENT_LLM`
-3. 保持 `JAYCODE_MEMORY_EXTRACTOR=rule` 或切换成 `llm`
-4. 需要更强检索时再启用 PgVector
-5. 需要真实工具调用时再切换 MCP Provider
-6. 需要更强隔离时再启用 Docker Skill Sandbox
-
-## 五、最常用检查命令
-
-```powershell
-cd .
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8100
-```
-
-```powershell
-cd web
-npm run build
-```
-
-```powershell
-cd .
-powershell -ExecutionPolicy Bypass -File .\setup-and-start.ps1
-```
+重启 API 后生效。未启用时，采用上文的独立 Worker 启动方式，便于本机观察和排障。

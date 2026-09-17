@@ -2,6 +2,8 @@
 
 > 面向想从 `five_weeks_gap_analysis` 延伸学习多 Agent 工程化项目的读者。
 > 这份手册只保留一条主线：先看架构，再按优先级学习核心文件。
+>
+> 运行状态更新（2026-09-17）：本文出现的 SQLite Store 是用于讲解兼容实现与演进过程；正式 Jaycode 已使用统一 `PersistenceStores` 连接 PostgreSQL `jayagent_studio`，RAG 使用同库 pgvector。日常启动请以 [Jaycode 启动方式](Jaycode%20启动方式.md) 为准。
 
 ## 1. 项目定位
 
@@ -1310,4 +1312,3 @@ Jaycode 的价值不在于某一个单点功能，而在于它把一个 Agent �
 对于想系统学习 Agent 开发的人来说，这个项目比“单纯的聊天机器人 demo”更值得研究。
 
 它更接近你后续做工程化、多 Agent、RAG、工作流、评测、治理的真实落地方向。
-

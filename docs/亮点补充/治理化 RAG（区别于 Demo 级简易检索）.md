@@ -1,4 +1,6 @@
 
+> **当前部署说明（2026-09-17）**：正式 Jaycode 使用 PostgreSQL `jayagent_studio` 的 `PgVectorRagStore`，与业务 Store 共用 `DATABASE_URL`；`PGVECTOR_DATABASE_URL` 必须指向相同目标。本文涉及 SQLite 的段落用于解释早期兼容实现和迁移来源，不代表当前运行后端。
+
 ## 一、增量索引：不要每次都全量重建
 
 **Demo 级做法**：每次有文档更新，把整个知识库重新切片、重新入库。慢，且浪费。
@@ -180,9 +182,9 @@ json
 
 这里要分两种后端模式看。
 
-## 1. 默认 SQLite 模式
+## 1. 历史 SQLite 兼容模式
 
-当前默认配置通常是：
+早期或兼容配置可使用：
 
 - `JAYCODE_RAG_STORE=sqlite`
 
@@ -210,18 +212,18 @@ def __init__(self, db_path: str | Path = "data/dev_agent_studio.db"):
 
 ---
 
-## 2. PgVector 模式
+## 2. 当前 PgVector 运行模式
 
-如果你把配置切到：
+当前正式配置为：
 
 - `JAYCODE_RAG_STORE=pgvector`
 
 并配置：
 
-- `PGVECTOR_DATABASE_URL`
-- 或 `DATABASE_URL`
+- `DATABASE_URL`
+- `PGVECTOR_DATABASE_URL`（如保留，必须与 `DATABASE_URL` 指向同一目标）
 
-那么 RAG 会存到 PostgreSQL 里，依赖 pgvector 做向量检索。
+RAG 存在 PostgreSQL `jayagent_studio`，依赖 pgvector 做向量检索；不再写入 `data/dev_agent_studio.db`。
 
 这部分也在 [app/persistence/rag_store.py](../../app/persistence/rag_store.py) 中的 `PgVectorRagStore` 实现里。
 

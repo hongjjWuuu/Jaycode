@@ -1,6 +1,6 @@
 # P1 PostgreSQL 全域接入与迁移收口计划
 
-> 状态：阶段五已通过；阶段六切换工具已就绪，等待单独确认维护窗口。当前不得切换 PostgreSQL、修改生效 `.env`、导入现有 SQLite 数据或写入现有 PostgreSQL 业务库。
+> 状态：**P1 已完成正式切换（2026-09-17）**。`jayagent_studio` 是权威持久化库；原 SQLite 与维护备份保留。发生恢复需求时，必须先冻结 PostgreSQL 写入并完成对账，禁止只修改 `.env` 回退。
 
 ## 目标与当前基线
 
@@ -185,7 +185,7 @@ Ruff → SQLite 全量 pytest → PostgreSQL 全域契约 → PostgreSQL API/Wor
 
 门禁清单必须逐项写明命令、日期、提交版本、pass/fail/skip、日志位置。任何失败、skip 或未执行项都意味着**不得正式切换**。更新《项目优化推进.md》时只能依据可复现结果变更状态。
 
-## 阶段 6：正式迁移与切换（前置门禁全通过后）
+## 阶段 6：正式迁移与切换（2026-09-17，已完成）
 
 此阶段会写入真实数据库，需单独确认维护窗口并由操作者在目标库预检查后执行：
 
@@ -210,6 +210,13 @@ Ruff → SQLite 全量 pytest → PostgreSQL 全域契约 → PostgreSQL API/Wor
 - 首次导入在发现 8 张未映射的历史业务表后按 fail-closed 规则中止：`agent_task_node_state`、`benchmark_comparison`、`marketplace_install_snapshot`、`platform_approval`、`platform_query`、`platform_version`、`rag_evaluation_run`、`schema_migration`。运行器仅删除了它在本次创建的空 `jayagent_studio`，未修改 `.env`、原 SQLite 或既有 PostgreSQL 库。
 - 映射清单已升级至 `sqlite-to-postgres-v2`，并新增对应的 PostgreSQL 版本化 Schema 迁移与合成数据演练。重新进行真实切换前，必须先完成隔离 PostgreSQL 演练验证；在此之前阶段六仍未完成，SQLite 仍是生效后端。
 
+### 阶段 6 正式提交记录（2026-09-17，已完成）
+
+- 维护窗口中新建的 `jayagent_studio` 已从一致性备份 `data/backups/dev_agent_studio-pre-postgres-20260917T084855Z.db` 导入；35 张表的导入及逐表核验均通过。脱敏报告：`artifacts/cutover/stage6-import-20260917T084855Z.json`、`artifacts/cutover/stage6-verify-20260917T084855Z.json`。
+- PostgreSQL 模式 API 与独立 Worker 已启动，`/health` 与 `/ready` 均返回正常。首次跨域写入烟测通过，覆盖 Task/Worker、Workflow、Review、Skill、MCP、Marketplace、Audit、LLM、Prompt、Benchmark、Memory 与 RAG；报告：`artifacts/cutover/stage6-commit-20260917T092715Z.json`。
+- `.env` 已指向同一 PostgreSQL/pgvector 目标 `jayagent_studio`。原 `data/dev_agent_studio.db`、每次维护备份、原 PostgreSQL 数据库与 Docker 数据卷均保留且不自动删除。
+- **提交点已越过：** PostgreSQL 已接受并验证新写入，成为权威后端。恢复只能在冻结 PostgreSQL 写入、对账并执行经批准的恢复方案后进行；不得仅切换配置回 SQLite。
+
 ## 最终验收与状态规则
 
-只有所有阶段门禁通过、正式迁移数据核验一致、PostgreSQL 模式 API/Worker E2E 成功后，才可以在推进书中将“PostgreSQL 全域接入/迁移/切换”及剩余 P1 标记完成。否则明确写出已完成项、未完成项、被跳过项和阻塞原因；默认保持 SQLite。
+阶段 0—5 门禁、正式迁移数据核验、PostgreSQL API/Worker 启动验证与首次跨域写入烟测已于 2026-09-17 全部通过；“PostgreSQL 全域接入/迁移/切换”及本项 P1 已标记完成。后续运行故障按上述冻结写入、对账和恢复流程处理。

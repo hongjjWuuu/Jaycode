@@ -10,6 +10,24 @@
 
 ---
 
+> **当前运行状态（2026-09-17）**：以下部分 SQLite 示例保留为早期学习材料，不是当前 Jaycode 的生效配置。正式运行使用 PostgreSQL `jayagent_studio`；`.env` 中 `JAYCODE_PERSISTENCE_STORE=postgres`、`JAYCODE_RAG_STORE=pgvector`，且 `DATABASE_URL` 与 `PGVECTOR_DATABASE_URL` 必须指向同一数据库。不要在文档中填写真实密码或 Token，也不要为了“简化启动”把它们改回 SQLite。
+
+## 当前最小运行配置
+
+```env
+JAYCODE_PERSISTENCE_STORE=postgres
+JAYCODE_RAG_STORE=pgvector
+DATABASE_URL=postgresql://<user>:<password>@127.0.0.1:5432/jayagent_studio
+PGVECTOR_DATABASE_URL=postgresql://<user>:<password>@127.0.0.1:5432/jayagent_studio
+JAYCODE_MEMORY_EXTRACTOR=rule
+JAYCODE_MCP_PROVIDER=local
+JAYCODE_SKILL_SANDBOX=subprocess
+```
+
+日常启动还需要 Docker PostgreSQL、API 与需要时的 Worker；完整步骤见 [Jaycode 启动方式](../Jaycode%20启动方式.md)。
+
+---
+
 ## 1. 基础应用配置
 
 ```
@@ -180,7 +198,7 @@ JAYCODE_LLM_PRICE_GPT_4O_MINI_OUTPUT_PER_1M=
 
 ---
 
-## 5. RAG 配置
+## 5. RAG 配置（历史 SQLite 示例）
 
 你现在这部分是：
 
@@ -298,7 +316,7 @@ JAYCODE_SKILL_SANDBOX=subprocess
 
 ---
 
-# 你这份 `.env` 里目前最值得改的 3 个地方
+# 历史 `.env` 示例的说明
 
 ## 1. `OPENAI_API_KEY` 前面的空格
 
@@ -336,7 +354,7 @@ JAYCODE_RAG_STORE=sqlite
 
 ---
 
-# 如果你问我“最小启动版”只要哪些
+# 历史 SQLite 最小启动示例
 
 你最少只需要保留：
 
@@ -356,7 +374,7 @@ JAYCODE_SKILL_SANDBOX_FALLBACK=false
 
 ---
 
-# 如果你问我“完整功能版”是什么
+# 历史 SQLite 完整功能示例
 
 那就是你现在这份，外加这几个建议：
 

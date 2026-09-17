@@ -37,36 +37,37 @@ Jaycode 前端不是单纯的展示页面，而是一个围绕“任务、执行
 
 ### 2.1 启动后端和前端
 
-最简单的启动方式：
+当前正式运行时，业务数据、RAG 向量和 Memory 都在 PostgreSQL `jayagent_studio`。先启动 PostgreSQL 容器，再启动 API；需要执行任务时还要启动 Worker。
+
+在终端 A 启动 PostgreSQL：
 
 ```powershell
-cd .
+cd D:\JayAgent\Jaycode
+docker compose -f docker-compose.pgvector.yml up -d
+docker compose -f docker-compose.pgvector.yml ps
+```
+
+在终端 B 启动 API：
+
+```powershell
+cd D:\JayAgent\Jaycode
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8100
 ```
 
-然后打开：
+在需要执行排队任务时，于终端 C 启动 Worker：
+
+```powershell
+cd D:\JayAgent\Jaycode
+.\.venv\Scripts\python.exe -m app.harness.worker --worker-id local-worker
+```
+
+然后打开控制台：
 
 ```text
 http://127.0.0.1:8100/
 ```
 
-推荐使用一键启动：
-
-```powershell
-cd .
-powershell -ExecutionPolicy Bypass -File .\setup-and-start.ps1
-```
-
-一键启动通常会完成：
-
-1. 检查 `.env`
-2. 检查 Python 环境
-3. 安装 Python 依赖
-4. 检查 Node.js 和 npm
-5. 安装 Web 依赖
-6. 构建 `web/dist`
-7. 启动 FastAPI
-8. 通过 FastAPI 托管 React 控制台
+`setup-and-start.ps1` 仅适合初始化或前端构建场景；日常运行请按上述顺序启动，确保数据库与 Worker 状态可见。不要重新执行迁移脚本，也不要将 `.env` 改回 SQLite。
 
 ### 2.2 前端单独开发模式
 
@@ -99,6 +100,14 @@ http://127.0.0.1:8100/
 ```text
 http://127.0.0.1:8100/health
 ```
+
+检查数据库与运行时就绪：
+
+```text
+http://127.0.0.1:8100/ready
+```
+
+`/health` 为 `ok` 且 `/ready` 为 `ready` 后再提交任务。Worker 未启动时任务会保持 `queued`，不会丢失。
 
 检查 API 文档：
 
