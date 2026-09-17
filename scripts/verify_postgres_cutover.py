@@ -44,6 +44,23 @@ def run_smoke() -> dict[str, object]:
     server_id = f"cutover_smoke_mcp_{suffix}"
     install_id = f"cutover_smoke_install_{suffix}"
     checks: list[str] = []
+    # The smoke test must not depend on the configured LLM/rule extractor:
+    # it validates PostgreSQL memory persistence with one deterministic,
+    # non-sensitive governed candidate instead.
+    import app.persistence.memory_store as memory_module
+
+    original_memory_extractor = memory_module._extract_memory_candidates
+    memory_module._extract_memory_candidates = lambda _text: (
+        [
+            {
+                "memory_type": "project_fact",
+                "memory_key": f"cutover_smoke_{suffix}",
+                "content": "PostgreSQL cutover smoke persistence verified.",
+                "confidence": 0.99,
+            }
+        ],
+        "cutover_smoke",
+    )
     try:
         stores.task.create_task(task_id, "cutover smoke", None, "queued", {"idempotency_key": task_id}, {"synthetic": True})
         claimed = stores.task.claim_task(task_id, "cutover-smoke-worker", lease_seconds=30)
@@ -129,6 +146,7 @@ def run_smoke() -> dict[str, object]:
         checks.append("rag")
         return {"status": "passed", "database": CUTOVER_DATABASE_NAME, "checks": checks}
     finally:
+        memory_module._extract_memory_candidates = original_memory_extractor
         # These identifiers are generated solely for smoke validation.  The
         # write acceptance remains recorded in the cutover report, without
         # retaining synthetic operational data in the migrated dataset.
