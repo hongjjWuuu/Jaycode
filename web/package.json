@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 5173",
     "build": "tsc -b && vite build",
-    "preview": "vite preview --host 127.0.0.1 --port 4173"
+    "preview": "vite preview --host 127.0.0.1 --port 4173",
+    "test": "node ./node_modules/vitest/vitest.mjs run --pool=forks --poolOptions.forks.singleFork=true"
   },
   "dependencies": {
     "react": "^18.3.1",
@@ -17,7 +18,11 @@
     "@vitejs/plugin-react": "^4.3.4",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.1.0",
+    "jsdom": "^25.0.1",
     "typescript": "^5.7.2",
-    "vite": "^6.0.7"
+    "vite": "^6.0.7",
+    "vitest": "^2.1.8"
   }
 }

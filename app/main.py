@@ -1,16 +1,25 @@
+import logging
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.routes import router as project_router
+from app.core.api_errors import (
+    http_exception_handler,
+    unhandled_exception_handler,
+    validation_exception_handler,
+)
 from app.core.config import settings
 from app.core.llm_monitor import llm_monitor
 from app.core.observability import configure_json_logging, metrics
 from app.core.security import security_middleware, validate_security_configuration
 from app.harness.supervisor import worker_supervisor
 from app.persistence.factory import get_persistence_stores
+
+logger = logging.getLogger("jaycode.api")
 
 # 创建 FastAPI 应用
 # 挂载 API 路由
@@ -20,6 +29,9 @@ validate_security_configuration()
 configure_json_logging()
 app = FastAPI(title=settings.app_name, version="0.1.0")
 app.middleware("http")(security_middleware)
+app.add_exception_handler(HTTPException, http_exception_handler)
+app.add_exception_handler(RequestValidationError, validation_exception_handler)
+app.add_exception_handler(Exception, unhandled_exception_handler)
 
 @app.get("/health")
 def health() -> dict[str, str]:
@@ -66,6 +78,8 @@ def start_runtime_services() -> None:
         worker_supervisor.max_restarts = max(1, settings.jaycode_worker_supervisor_max_restarts)
         worker_supervisor.worker_count = max(1, settings.jaycode_worker_count)
         worker_supervisor.start()
+        if not worker_supervisor.wait_until_ready(settings.jaycode_worker_supervisor_startup_timeout_seconds):
+            logger.warning("worker_supervisor_not_ready", extra={"supervisor": worker_supervisor.snapshot()})
 
 
 @app.on_event("shutdown")

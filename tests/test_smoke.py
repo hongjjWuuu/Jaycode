@@ -275,6 +275,27 @@ def test_worker_supervisor_enters_degraded_after_restart_limit() -> None:
         supervisor.stop()
 
 
+def test_worker_supervisor_reports_spawn_failure_without_losing_its_watch_loop() -> None:
+    import time
+
+    from app.harness.supervisor import WorkerSupervisor
+
+    def fail_to_spawn(*_args, **_kwargs):
+        raise OSError("synthetic process creation failure")
+
+    supervisor = WorkerSupervisor(max_restarts=2, backoff_seconds=0.01, popen_factory=fail_to_spawn)
+    supervisor.start()
+    deadline = time.monotonic() + 3
+    try:
+        while supervisor.status != "degraded" and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert supervisor.status == "degraded"
+        assert supervisor.restart_counts[0] == 2
+        assert supervisor.snapshot()["alive"] is False
+    finally:
+        supervisor.stop()
+
+
 def test_sqlite_backup_creates_consistent_manifest_without_overwrite(tmp_path) -> None:
     import json
     import sqlite3

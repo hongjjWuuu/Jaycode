@@ -162,7 +162,7 @@ Jaycode/
 - `app/agents/`：面向业务的 Agent 能力实现
 - `app/persistence/`：记忆、RAG、任务持久化
 - `app/skills/`：可扩展技能系统
-- `app/api/routes.py`：统一 API 出口
+- `app/api/routes/`：按领域组织的统一 API 出口
 - `web/src/App.tsx`：前端交互入口
 
 ---
@@ -484,14 +484,14 @@ def run_graph(self, context, graph_runner, input_state):
 
 ### 4.2 第 2 层：再补系统能力
 
-7. `app/api/routes.py`
+7. `app/api/routes/`
 8. `app/persistence/rag_store.py`
 9. `app/persistence/memory_store.py`
 10. `app/skills/registry.py`
 11. `app/skills/executor.py`
 12. `app/providers/llm_provider.py`
 
-#### 4.2.1 `app/api/routes.py`
+#### 4.2.1 `app/api/routes/`
 
 - 作用：后端统一 API 总入口
 - 结构：项目分析、代码审查、RAG、学习计划、任务、工作流、Skill、MCP、Benchmark 等接口
@@ -1203,7 +1203,7 @@ rag_store = create_rag_store()
 - 内容：创建应用、健康检查、挂载 API 和前端静态资源
 - 架构位置：系统最外层入口
 
-### 5.2 `app/api/routes.py`
+### 5.2 `app/api/routes/`
 
 - 职责：系统能力总入口
 - 内容：把分析、审查、RAG、任务、工作流、Skill、MCP、评测统一暴露出去

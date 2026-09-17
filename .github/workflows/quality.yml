@@ -27,6 +27,8 @@ jobs:
           node-version: "22"
       - run: npm ci
         working-directory: web
+      - run: npm test
+        working-directory: web
       - run: npm audit --omit=dev --audit-level=high
         working-directory: web
       - run: npm run build

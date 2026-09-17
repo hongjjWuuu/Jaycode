@@ -48,7 +48,7 @@ app = FastAPI(title=settings.app_name, version="0.1.0")
 
 文件：
 
-- [app/api/routes.py](../../app/api/routes.py)
+- [app/api/routes/](../../app/api/routes/__init__.py)
 
 职责：
 
@@ -98,7 +98,7 @@ FastAPI 用 `@app.get()`、`@app.post()` 或 `APIRouter` 来定义路由。
 在 Jaycode 中：
 
 - `app/main.py` 负责挂载路由
-- `app/api/routes.py` 负责组织业务接口
+- `app/api/routes/` 负责按领域组织业务接口
 
 常见接口示例：
 
@@ -360,7 +360,7 @@ FastAPI 会自动生成 OpenAPI / Swagger 文档。
 建议按这个顺序理解：
 
 1. `app/main.py`：应用怎么创建、怎么挂载路由、怎么挂载前端
-2. `app/api/routes.py`：接口怎么分模块组织
+2. `app/api/routes/`：接口如何按领域组织
 3. `app/schemas/*.py`：请求和响应模型怎么定义
 4. `app/core/config.py`：环境变量和运行配置怎么管理
 5. `StreamingResponse`：长任务和事件流怎么返回

@@ -36,6 +36,7 @@
   WorkflowRecord,
   WorkflowValidation,
 } from './types';
+import { consumeSse } from './services/http';
 
 const API_BASE = '';
 
@@ -71,23 +72,7 @@ export async function runTaskStream(
     throw new Error(`任务启动失败：${response.status}`);
   }
 
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder('utf-8');
-  let buffer = '';
-
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const chunks = buffer.split('\n\n');
-    buffer = chunks.pop() ?? '';
-    for (const chunk of chunks) {
-      const line = chunk.split('\n').find((item) => item.startsWith('data: '));
-      if (!line) continue;
-      const raw = line.slice(6).trim();
-      if (raw) onEvent(JSON.parse(raw));
-    }
-  }
+  await consumeSse(response, onEvent);
 }
 
 export async function runCollaborationTaskStream(
@@ -118,23 +103,7 @@ export async function runCollaborationTaskStream(
     throw new Error(`Collaboration task failed: ${response.status}`);
   }
 
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder('utf-8');
-  let buffer = '';
-
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const chunks = buffer.split('\n\n');
-    buffer = chunks.pop() ?? '';
-    for (const chunk of chunks) {
-      const line = chunk.split('\n').find((item) => item.startsWith('data: '));
-      if (!line) continue;
-      const raw = line.slice(6).trim();
-      if (raw) onEvent(JSON.parse(raw));
-    }
-  }
+  await consumeSse(response, onEvent);
 }
 
 export async function listTasks(): Promise<TaskSummary[]> {

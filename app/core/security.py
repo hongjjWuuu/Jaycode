@@ -83,7 +83,7 @@ def validate_security_configuration() -> None:
 def _auth_error(error_code: str, message: str, request_id: str, status_code: int) -> JSONResponse:
     return JSONResponse(
         status_code=status_code,
-        content={"error_code": error_code, "message": message, "request_id": request_id},
+        content={"error_code": error_code, "message": message, "request_id": request_id, "details": {}, "detail": message},
         headers={"X-Request-ID": request_id},
     )
 

@@ -10,6 +10,12 @@ class Settings(BaseSettings):
     jaycode_task_max_runtime_seconds: int = Field(default=900, validation_alias="JAYCODE_TASK_MAX_RUNTIME_SECONDS")
     jaycode_worker_supervisor_enabled: bool = Field(default=False, validation_alias="JAYCODE_WORKER_SUPERVISOR_ENABLED")
     jaycode_worker_supervisor_max_restarts: int = Field(default=5, validation_alias="JAYCODE_WORKER_SUPERVISOR_MAX_RESTARTS")
+    jaycode_worker_supervisor_startup_timeout_seconds: float = Field(
+        default=5.0,
+        ge=0.1,
+        le=60.0,
+        validation_alias="JAYCODE_WORKER_SUPERVISOR_STARTUP_TIMEOUT_SECONDS",
+    )
     jaycode_worker_count: int = Field(default=1, ge=1, le=16, validation_alias="JAYCODE_WORKER_COUNT")
     jaycode_llm_fallback_rate_threshold: float = Field(default=0.2, ge=0, le=1, validation_alias="JAYCODE_LLM_FALLBACK_RATE_THRESHOLD")
     jaycode_llm_schema_failure_rate_threshold: float = Field(default=0.05, ge=0, le=1, validation_alias="JAYCODE_LLM_SCHEMA_FAILURE_RATE_THRESHOLD")

@@ -15,7 +15,7 @@
 - `app/graphs/studio_graphs.py`
 - `app/graphs/workflow_compiler.py`
 - `app/harness/runtime.py`
-- `app/api/routes.py`
+- `app/api/routes/`
 - `app/persistence/rag_store.py`
 - `app/persistence/memory_store.py`
 - `app/skills/registry.py`
@@ -1100,7 +1100,7 @@ benchmark 会覆盖 LLM、RAG、Workflow、MCP、多 Agent 协作等多个方向
 #### 项目落点
 
 - [app/benchmark_runner.py](../app/benchmark_runner.py)
-- [app/api/routes.py](../app/api/routes.py)
+- [app/api/routes/](../app/api/routes/__init__.py)
 
 #### 记忆方式
 

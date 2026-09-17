@@ -332,6 +332,5 @@ Jaycode 的 marketplace 也支持 `mcp_pack`。
 - Skill 安装: [app/marketplace/installer.py](../../app/marketplace/installer.py)
 - MCP provider: [app/providers/mcp_provider.py](../../app/providers/mcp_provider.py)
 - 工作流编译: [app/graphs/workflow_compiler.py](../../app/graphs/workflow_compiler.py)
-- API 路由: [app/api/routes.py](../../app/api/routes.py)
+- API 路由: [app/api/routes/](../../app/api/routes/__init__.py)
 - 数据库存储: [app/persistence/sqlite_store.py](../../app/persistence/sqlite_store.py)
-

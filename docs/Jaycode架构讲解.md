@@ -114,7 +114,7 @@ Jaycode 用分层把这些问题拆开了。
 
 ## 4. API 门户层
 
-核心文件是 `app/api/routes.py`。
+核心入口是 `app/api/routes/` Router 包。
 
 ### 4.1 它的职责
 

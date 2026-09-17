@@ -4,6 +4,7 @@ import logging
 import subprocess
 import sys
 import threading
+import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
@@ -46,6 +47,11 @@ class WorkerSupervisor:
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
             return
+        # A stopped supervisor is a new lifecycle.  Do not carry a previous
+        # process's restart budget into an API restart.
+        self.processes.clear()
+        self.restart_counts.clear()
+        self.next_start_at.clear()
         self._stop.clear()
         self.status = "starting"
         self._thread = threading.Thread(target=self._watch, name="jaycode-worker-supervisor", daemon=True)
@@ -53,14 +59,32 @@ class WorkerSupervisor:
 
     def stop(self) -> None:
         self._stop.set()
-        for process in self.processes.values():
+        for process in list(self.processes.values()):
             if process.poll() is None:
                 process.terminate()
                 try:
                     process.wait(timeout=2)
                 except subprocess.TimeoutExpired:
                     process.kill()
+        if self._thread and self._thread.is_alive():
+            self._thread.join(timeout=3)
+        self.processes.clear()
         self.status = "stopped"
+
+    def wait_until_ready(self, timeout_seconds: float) -> bool:
+        """Give initial worker processes a bounded chance to register.
+
+        This does not make the API fail open: callers must still use
+        ``snapshot``/``/ready`` after the timeout.
+        """
+        deadline = time.monotonic() + max(0.0, timeout_seconds)
+        while time.monotonic() < deadline:
+            if self.snapshot()["alive"]:
+                return True
+            if self.status == "degraded":
+                return False
+            self._stop.wait(0.05)
+        return bool(self.snapshot()["alive"])
 
     def snapshot(self) -> dict[str, Any]:
         alive = sum(process.poll() is None for process in self.processes.values())
@@ -75,8 +99,6 @@ class WorkerSupervisor:
         }
 
     def _watch(self) -> None:
-        import time
-
         while not self._stop.is_set():
             now = time.monotonic()
             for slot in range(self.worker_count):
@@ -89,11 +111,20 @@ class WorkerSupervisor:
                     logger.error("worker_exit", extra={"worker_id": f"supervised-{slot}", "error_code": "WORKER_EXIT", "status": str(code)})
                     self.next_start_at[slot] = now + self.backoff_seconds * min(self.restart_counts[slot], 5)
                 if slot not in self.processes and self.restart_counts.get(slot, 0) < self.max_restarts and now >= self.next_start_at.get(slot, 0):
-                    self.processes[slot] = self._popen_factory(
-                        list(self._command_factory(slot)),
-                        cwd=str(Path.cwd()), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                    )
-                    metrics.inc("jaycode_workers_started_total")
+                    try:
+                        self.processes[slot] = self._popen_factory(
+                            list(self._command_factory(slot)),
+                            cwd=str(Path.cwd()), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                        )
+                        metrics.inc("jaycode_workers_started_total")
+                    except OSError as exc:
+                        self.restart_counts[slot] = self.restart_counts.get(slot, 0) + 1
+                        self.next_start_at[slot] = now + self.backoff_seconds * min(self.restart_counts[slot], 5)
+                        metrics.inc("jaycode_worker_start_failures_total")
+                        logger.warning(
+                            "worker_start_failed",
+                            extra={"worker_id": f"supervised-{slot}", "error_code": "WORKER_START_FAILED", "status": type(exc).__name__},
+                        )
             degraded = any(count >= self.max_restarts for count in self.restart_counts.values())
             self.status = "degraded" if degraded else "running" if len(self.processes) == self.worker_count else "backoff"
             alive = sum(process.poll() is None for process in self.processes.values())

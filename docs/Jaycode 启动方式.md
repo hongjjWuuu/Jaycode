@@ -83,6 +83,8 @@ npm run dev -- --host 127.0.0.1 --port 5173
 ```env
 JAYCODE_WORKER_SUPERVISOR_ENABLED=true
 JAYCODE_WORKER_COUNT=1
+JAYCODE_WORKER_SUPERVISOR_MAX_RESTARTS=5
+JAYCODE_WORKER_SUPERVISOR_STARTUP_TIMEOUT_SECONDS=5
 ```
 
-重启 API 后生效。未启用时，采用上文的独立 Worker 启动方式，便于本机观察和排障。
+重启 API 后生效；启动后的 `/ready` 会同时检查数据库和 Supervisor 创建的全部 Worker。若 Worker 无法启动或重启次数耗尽，`/ready` 返回 `503`，请查看 API 日志并修复后重启 API。未启用时，采用上文的独立 Worker 启动方式，便于本机观察和排障；不要同时启动 Supervisor 和同一用途的手工 Worker，以免不必要地争抢队列。

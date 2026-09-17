@@ -167,7 +167,7 @@ json
 最关键的是这几个：
 
 - [app/persistence/rag_store.py](../../app/persistence/rag_store.py)
-- [app/api/routes.py](../../app/api/routes.py)
+- [app/api/routes/](../../app/api/routes/__init__.py)
 - [app/agents/rag_tools.py](../../app/agents/rag_tools.py)
 - [app/benchmark_runner.py](../../app/benchmark_runner.py)
 
@@ -296,7 +296,7 @@ API 路由里有：
 - `POST /rag/process`
 - `POST /rag/ingest`
 
-在 [app/api/routes.py](../../app/api/routes.py) 中：
+在 [app/api/routes/](../../app/api/routes/__init__.py) 中：
 
 - `/rag/process`
     
@@ -335,7 +335,7 @@ API 路由里有：
 
 直接塞进知识库。
 
-在 [app/api/routes.py](../../app/api/routes.py) 里你也能看到很多地方会调用它，比如：
+在 [app/api/routes/](../../app/api/routes/__init__.py) 里你也能看到很多地方会调用它，比如：
 
 - 学习计划沉淀
 - 审核备注保存
@@ -349,7 +349,7 @@ API 路由里有：
 
 - `POST /rag/query`
 
-对应 [app/api/routes.py](../../app/api/routes.py)：
+对应 [app/api/routes/](../../app/api/routes/__init__.py)：
 
 ```
 results = rag_store.query(request.collection, request.question, request.limit, actor_id=actor_id)
@@ -512,7 +512,7 @@ Gold Set 是“标准答案集合”。
 - MRR
 - 其他检索指标
 
-对应接口在 [app/api/routes.py](../../app/api/routes.py)：
+对应接口在 [app/api/routes/](../../app/api/routes/__init__.py)：
 
 - `GET /rag/gold-cases`
 - `POST /rag/gold-cases`
