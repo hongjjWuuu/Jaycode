@@ -51,7 +51,78 @@ def _source_database(path: Path, *, invalid_audit_json: bool = False) -> Path:
         {"idempotency_key": f"migration-{suffix}"},
         {"source": "synthetic"},
     )
+    # The second row has optional fields populated while the first leaves
+    # them NULL, which guards the explicit-null verification projection.
+    task_store.create_task(
+        f"migration-task-populated-{suffix}",
+        "migration rehearsal populated",
+        "synthetic-project",
+        "completed",
+        {
+            "idempotency_key": f"migration-populated-{suffix}",
+            "request_id": f"request-{suffix}",
+            "actor_id": "migration-test",
+            "role": "admin",
+        },
+        {"source": "synthetic", "optional": True},
+    )
+    # Workflow timestamps are stored as TIMESTAMPTZ by PostgreSQL; keep one
+    # source row here to verify that timezone rendering is canonicalized.
+    task_store.save_workflow(
+        f"migration-workflow-{suffix}",
+        "migration workflow",
+        None,
+        [{"id": "node-1", "kind": "synthetic"}],
+        [],
+    )
     with task_store._connect() as connection:
+        # These legacy tables exist in the production SQLite snapshot but are
+        # deliberately not created by a blank SQLiteTaskStore test database.
+        # Create their source-compatible shape so the rehearsal tests the full
+        # 35-table migration contract, including JSON conversion.
+        connection.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS agent_task_node_state (
+                task_id TEXT NOT NULL, node_id TEXT NOT NULL, state TEXT NOT NULL,
+                attempt INTEGER NOT NULL, error_message TEXT, output_json TEXT,
+                started_at TEXT, finished_at TEXT, updated_at TEXT NOT NULL,
+                PRIMARY KEY(task_id, node_id)
+            );
+            CREATE TABLE IF NOT EXISTS benchmark_comparison (
+                comparison_id TEXT PRIMARY KEY, current_run_id TEXT NOT NULL,
+                baseline_run_id TEXT, regression_status TEXT NOT NULL,
+                threshold_json TEXT NOT NULL, delta_json TEXT NOT NULL, created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS marketplace_install_snapshot (
+                snapshot_id TEXT PRIMARY KEY, package_id TEXT NOT NULL, package_type TEXT NOT NULL,
+                manifest_json TEXT NOT NULL, state_json TEXT NOT NULL, created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS platform_approval (
+                approval_id TEXT PRIMARY KEY, object_type TEXT NOT NULL, object_id TEXT NOT NULL,
+                version_id TEXT, actor_id TEXT NOT NULL, decision TEXT NOT NULL,
+                reason TEXT, created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS platform_query (
+                query_id TEXT PRIMARY KEY, query_type TEXT NOT NULL, actor_id TEXT NOT NULL,
+                task_id TEXT, input_json TEXT NOT NULL, result_json TEXT NOT NULL,
+                score_json TEXT NOT NULL, created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS platform_version (
+                version_id TEXT PRIMARY KEY, object_type TEXT NOT NULL, object_id TEXT NOT NULL,
+                version TEXT NOT NULL, status TEXT NOT NULL, manifest_json TEXT NOT NULL,
+                created_by TEXT, created_at TEXT NOT NULL, activated_at TEXT
+            );
+            CREATE TABLE IF NOT EXISTS rag_evaluation_run (
+                run_id TEXT PRIMARY KEY, collection TEXT, actor_id TEXT NOT NULL,
+                case_count INTEGER NOT NULL, hit_count INTEGER NOT NULL,
+                recall_at_8 REAL NOT NULL, mrr REAL NOT NULL,
+                result_json TEXT NOT NULL, created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS schema_migration (
+                version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL
+            );
+            """
+        )
         connection.execute(
             """INSERT INTO agent_task_node_state(
                 task_id,node_id,state,attempt,error_message,output_json,started_at,finished_at,updated_at
@@ -182,7 +253,8 @@ def test_rehearsal_import_verify_and_repeat_rejection(tmp_path: Path) -> None:
     source = _source_database(tmp_path / "source.sqlite3")
 
     imported = import_postgres(source, TARGET_ENV)
-    assert imported["tables"]["agent_task"]["row_count"] == 1
+    assert imported["tables"]["agent_task"]["row_count"] == 2
+    assert imported["tables"]["workflow_definition"]["row_count"] == 1
     assert imported["tables"]["agent_task_node_state"]["row_count"] == 1
     assert imported["tables"]["benchmark_comparison"]["row_count"] == 1
     assert imported["tables"]["marketplace_install_snapshot"]["row_count"] == 1

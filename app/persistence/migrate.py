@@ -7,7 +7,7 @@ import base64
 import hashlib
 import json
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -231,6 +231,10 @@ def _source_tables(connection: sqlite3.Connection) -> list[str]:
 
 def _canonical(value: Any) -> Any:
     if isinstance(value, datetime):
+        # PostgreSQL normalizes TIMESTAMPTZ values to the connection timezone;
+        # compare instants, not their original +08:00 / +00:00 rendering.
+        if value.tzinfo is not None:
+            return value.astimezone(timezone.utc).isoformat()
         return value.isoformat()
     if isinstance(value, bytes):
         return _json_value(value)
@@ -465,6 +469,22 @@ def _insert_rows(connection: Any, table: str, rows: list[dict[str, Any]], target
     return hashes
 
 
+def _comparison_hashes(
+    table: str, rows: list[dict[str, Any]], target_columns: list[dict[str, Any]]
+) -> list[str]:
+    """Hash mapped rows with a stable, explicit-null comparison projection.
+
+    SQLite omits nullable fields from an insert when their value is ``None``;
+    PostgreSQL returns those same fields as ``NULL`` when selecting a complete
+    row.  The comparison projection must include every column used by any row,
+    filling an omitted nullable value with ``None``, otherwise equivalent rows
+    produce different hashes.
+    """
+    mapped_rows = [_mapped_row(table, row, target_columns) for row in rows]
+    columns = sorted({column for row in mapped_rows for column in row})
+    return [_row_digest({column: row.get(column) for column in columns}) for row in mapped_rows]
+
+
 def import_postgres(source: Path, target_url_env: str, *, production_cutover: bool = False) -> dict[str, Any]:
     """Import an explicit SQLite snapshot into a guarded PostgreSQL target."""
     target_url = _target_url(target_url_env, production_cutover=production_cutover)
@@ -483,7 +503,8 @@ def import_postgres(source: Path, target_url_env: str, *, production_cutover: bo
             if not metadata:
                 raise ValueError(f"PostgreSQL target is missing table {table}.")
             _validate_table_schema(table, source_columns[table], metadata)
-            table_hashes[table] = _insert_rows(connection, table, rows, metadata)
+            _insert_rows(connection, table, rows, metadata)
+            table_hashes[table] = _comparison_hashes(table, rows, metadata)
         report = {
             "format": "jaycode-postgres-import-v1",
             "mapping_version": MAPPING_VERSION,
@@ -518,8 +539,12 @@ def verify_postgres(source: Path, target_url_env: str, *, production_cutover: bo
         for table, rows in source_rows.items():
             metadata = _target_columns(connection, TABLE_MAPPINGS[table].target_table)
             _validate_table_schema(table, source_columns[table], metadata)
-            source_hashes = [_row_digest(_mapped_row(table, row, metadata)) for row in rows]
-            columns = sorted({column for row in rows for column in _mapped_row(table, row, metadata)})
+            mapped_rows = [_mapped_row(table, row, metadata) for row in rows]
+            columns = sorted({column for row in mapped_rows for column in row})
+            source_hashes = [
+                _row_digest({column: row.get(column) for column in columns})
+                for row in mapped_rows
+            ]
             if columns:
                 selected = connection.execute(
                     sql.SQL("SELECT {} FROM {}").format(
