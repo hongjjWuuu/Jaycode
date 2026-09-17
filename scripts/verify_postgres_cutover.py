@@ -110,7 +110,7 @@ def run_smoke() -> dict[str, object]:
         checks.append("benchmark")
 
         memories = stores.memory.extract_candidates(
-            f"cutover smoke memory {suffix}", scope="cutover", scope_id=suffix,
+            f"cutover smoke memory {suffix}", scope="project", scope_id=suffix,
             source_ref="cutover-smoke", actor_id="cutover-smoke",
         )
         if not memories:
