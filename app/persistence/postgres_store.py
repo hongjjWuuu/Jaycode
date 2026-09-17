@@ -315,6 +315,52 @@ class PostgresTaskStore:
         with self.connection() as conn:
             assert_pgvector_available(conn)
             apply_postgres_migrations(conn, (PostgresMigration(2, "all-domain-schema", statements),))
+        legacy_statements = (
+            """CREATE TABLE IF NOT EXISTS agent_task_node_state (
+                task_id TEXT NOT NULL, node_id TEXT NOT NULL, state TEXT NOT NULL,
+                attempt INTEGER NOT NULL, error_message TEXT, output_json JSONB,
+                started_at TEXT, finished_at TEXT, updated_at TEXT NOT NULL,
+                PRIMARY KEY(task_id, node_id)
+            )""",
+            """CREATE TABLE IF NOT EXISTS benchmark_comparison (
+                comparison_id TEXT PRIMARY KEY, current_run_id TEXT NOT NULL,
+                baseline_run_id TEXT, regression_status TEXT NOT NULL,
+                threshold_json JSONB NOT NULL, delta_json JSONB NOT NULL, created_at TEXT NOT NULL
+            )""",
+            """CREATE TABLE IF NOT EXISTS marketplace_install_snapshot (
+                snapshot_id TEXT PRIMARY KEY, package_id TEXT NOT NULL, package_type TEXT NOT NULL,
+                manifest_json JSONB NOT NULL, state_json JSONB NOT NULL, created_at TEXT NOT NULL
+            )""",
+            """CREATE TABLE IF NOT EXISTS platform_approval (
+                approval_id TEXT PRIMARY KEY, object_type TEXT NOT NULL, object_id TEXT NOT NULL,
+                version_id TEXT, actor_id TEXT NOT NULL, decision TEXT NOT NULL,
+                reason TEXT, created_at TEXT NOT NULL
+            )""",
+            """CREATE TABLE IF NOT EXISTS platform_query (
+                query_id TEXT PRIMARY KEY, query_type TEXT NOT NULL, actor_id TEXT NOT NULL,
+                task_id TEXT, input_json JSONB NOT NULL, result_json JSONB NOT NULL,
+                score_json JSONB NOT NULL, created_at TEXT NOT NULL
+            )""",
+            """CREATE TABLE IF NOT EXISTS platform_version (
+                version_id TEXT PRIMARY KEY, object_type TEXT NOT NULL, object_id TEXT NOT NULL,
+                version TEXT NOT NULL, status TEXT NOT NULL, manifest_json JSONB NOT NULL,
+                created_by TEXT, created_at TEXT NOT NULL, activated_at TEXT
+            )""",
+            """CREATE TABLE IF NOT EXISTS rag_evaluation_run (
+                run_id TEXT PRIMARY KEY, collection TEXT, actor_id TEXT NOT NULL,
+                case_count INTEGER NOT NULL, hit_count INTEGER NOT NULL,
+                recall_at_8 DOUBLE PRECISION NOT NULL, mrr DOUBLE PRECISION NOT NULL,
+                result_json JSONB NOT NULL, created_at TEXT NOT NULL
+            )""",
+            """CREATE TABLE IF NOT EXISTS schema_migration (
+                version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_pg_node_state_task ON agent_task_node_state(task_id, updated_at)",
+            "CREATE INDEX IF NOT EXISTS idx_pg_platform_query_task ON platform_query(task_id, created_at)",
+            "CREATE INDEX IF NOT EXISTS idx_pg_rag_evaluation_collection ON rag_evaluation_run(collection, created_at)",
+        )
+        with self.connection() as conn:
+            apply_postgres_migrations(conn, (PostgresMigration(3, "legacy-domain-schema", legacy_statements),))
 
     def save_audit(self, record: dict[str, Any]) -> None:
         audit = {"audit_id": record.get("audit_id") or f"audit_{uuid4().hex}", **record}

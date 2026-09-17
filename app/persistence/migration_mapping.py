@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-MAPPING_VERSION = "sqlite-to-postgres-v1"
+MAPPING_VERSION = "sqlite-to-postgres-v2"
 
 # These are all current persistence tables. A source table not in this list is
 # intentionally a migration blocker: silently dropping data is never valid.
@@ -14,6 +14,7 @@ MIGRATION_TABLES = (
     "agent_worker",
     "agent_task_event",
     "agent_task_artifact",
+    "agent_task_node_state",
     "workflow_definition",
     "human_review_action",
     "learning_plan",
@@ -25,18 +26,25 @@ MIGRATION_TABLES = (
     "mcp_tool_call_log",
     "benchmark_run",
     "benchmark_result",
+    "benchmark_comparison",
     "skill_plugin",
     "skill_registry",
     "skill_approval",
     "skill_execution_log",
     "skill_version_snapshot",
     "plugin_marketplace_install",
+    "marketplace_install_snapshot",
+    "platform_approval",
+    "platform_query",
+    "platform_version",
     "security_audit_log",
     "memory_record",
     "memory_lifecycle_event",
     "rag_document",
     "rag_chunk",
     "rag_gold_case",
+    "rag_evaluation_run",
+    "schema_migration",
 )
 
 

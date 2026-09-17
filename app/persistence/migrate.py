@@ -18,6 +18,10 @@ from app.persistence.postgres_store import PostgresTaskStore
 from app.persistence.sqlite_path import resolve_sqlite_path
 
 
+CUTOVER_TARGET_ENV = "JAYCODE_CUTOVER_DATABASE_URL"
+CUTOVER_DATABASE_NAME = "jayagent_studio"
+
+
 def _json_value(value: Any) -> Any:
     if isinstance(value, bytes):
         return {"$bytes_base64": base64.b64encode(value).decode("ascii")}
@@ -170,11 +174,13 @@ def export_sqlite(destination: Path, source: Path | None = None) -> dict[str, An
     return {"export": str(destination), "tables": len(tables), "manifest": manifest}
 
 
-def _target_url(environment_name: str) -> str:
+def _target_url(environment_name: str, *, production_cutover: bool = False) -> str:
     import os
 
     if not environment_name or environment_name == "DATABASE_URL":
         raise ValueError("A dedicated target URL environment variable is required; DATABASE_URL is not accepted.")
+    if production_cutover and environment_name != CUTOVER_TARGET_ENV:
+        raise ValueError(f"Production cutover requires {CUTOVER_TARGET_ENV}; other target variables are not accepted.")
     value = os.getenv(environment_name, "").strip()
     if not value:
         raise ValueError(f"Set {environment_name} to an isolated PostgreSQL target URL.")
@@ -183,9 +189,30 @@ def _target_url(environment_name: str) -> str:
         raise ValueError("Migration target must be a PostgreSQL URL.")
     if (parsed.hostname or "").lower() not in {"localhost", "127.0.0.1", "::1"}:
         raise ValueError("Stage-four migration rehearsal is restricted to loopback PostgreSQL targets.")
-    if not parsed.path.lstrip("/").startswith("jaycode_test_"):
+    database_name = parsed.path.lstrip("/")
+    if production_cutover:
+        if database_name != CUTOVER_DATABASE_NAME:
+            raise ValueError(f"Production cutover target must be {CUTOVER_DATABASE_NAME}.")
+    elif not database_name.startswith("jaycode_test_"):
         raise ValueError("Stage-four migration rehearsal requires a random jaycode_test_* target database.")
     return value
+
+
+def _assert_cutover_backup_source(source: Path) -> None:
+    """Require a verified, non-live SQLite backup for a production import."""
+    source = source.resolve()
+    expected_directory = (Path("data") / "backups").resolve()
+    if source.parent != expected_directory or not source.name.startswith("dev_agent_studio-pre-postgres-"):
+        raise ValueError("Production cutover source must be a data/backups/dev_agent_studio-pre-postgres-* SQLite backup.")
+    manifest_path = source.with_suffix(source.suffix + ".manifest.json")
+    if not manifest_path.is_file():
+        raise ValueError("Production cutover backup manifest is missing.")
+    try:
+        saved_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError("Production cutover backup manifest is invalid JSON.") from exc
+    if saved_manifest != sqlite_manifest(source):
+        raise ValueError("Production cutover backup no longer matches its manifest.")
 
 
 def _sqlite_table_columns(connection: sqlite3.Connection, table: str) -> list[str]:
@@ -438,9 +465,11 @@ def _insert_rows(connection: Any, table: str, rows: list[dict[str, Any]], target
     return hashes
 
 
-def import_postgres(source: Path, target_url_env: str) -> dict[str, Any]:
-    """Import one SQLite snapshot into a disposable PostgreSQL rehearsal database."""
-    target_url = _target_url(target_url_env)
+def import_postgres(source: Path, target_url_env: str, *, production_cutover: bool = False) -> dict[str, Any]:
+    """Import an explicit SQLite snapshot into a guarded PostgreSQL target."""
+    target_url = _target_url(target_url_env, production_cutover=production_cutover)
+    if production_cutover:
+        _assert_cutover_backup_source(source)
     source_rows, manifest, source_columns = _migration_source_rows(source)
     fingerprint = _source_fingerprint(manifest)
     store = PostgresTaskStore(target_url)
@@ -471,9 +500,11 @@ def import_postgres(source: Path, target_url_env: str) -> dict[str, Any]:
     return report
 
 
-def verify_postgres(source: Path, target_url_env: str) -> dict[str, Any]:
-    """Compare mapped source rows against an imported disposable target database."""
-    target_url = _target_url(target_url_env)
+def verify_postgres(source: Path, target_url_env: str, *, production_cutover: bool = False) -> dict[str, Any]:
+    """Compare mapped source rows against an imported guarded target database."""
+    target_url = _target_url(target_url_env, production_cutover=production_cutover)
+    if production_cutover:
+        _assert_cutover_backup_source(source)
     source_rows, manifest, source_columns = _migration_source_rows(source)
     fingerprint = _source_fingerprint(manifest)
     store = PostgresTaskStore(target_url)
@@ -507,9 +538,11 @@ def verify_postgres(source: Path, target_url_env: str) -> dict[str, Any]:
     return report
 
 
-def check_rehearsal(source: Path, target_url_env: str) -> dict[str, Any]:
-    """Read-only compatibility check for a pre-initialized rehearsal target."""
-    target_url = _target_url(target_url_env)
+def check_rehearsal(source: Path, target_url_env: str, *, production_cutover: bool = False) -> dict[str, Any]:
+    """Read-only compatibility check for a pre-initialized guarded target."""
+    target_url = _target_url(target_url_env, production_cutover=production_cutover)
+    if production_cutover:
+        _assert_cutover_backup_source(source)
     _rows, manifest, source_columns = _migration_source_rows(source)
     store = PostgresTaskStore(target_url)
     with store.connection() as connection:
@@ -535,29 +568,37 @@ def main() -> int:
     parser.add_argument("--import-postgres", action="store_true")
     parser.add_argument("--verify", action="store_true")
     parser.add_argument(
+        "--production-cutover",
+        action="store_true",
+        help="Use the separately guarded production cutover target; requires an explicit confirmation value.",
+    )
+    parser.add_argument("--confirm-cutover-target", help=f"Must equal {CUTOVER_DATABASE_NAME} with --production-cutover.")
+    parser.add_argument(
         "--target-url-env",
         default="JAYCODE_MIGRATION_TARGET_URL",
-        help="Environment variable holding an isolated jaycode_test_* PostgreSQL URL.",
+        help="Environment variable holding the guarded target PostgreSQL URL.",
     )
     parser.add_argument("--report", type=Path, help="New, non-overwriting report file for import or verification.")
     args = parser.parse_args()
     if args.backup_sqlite:
-        print(json.dumps(backup_sqlite(args.backup_sqlite), ensure_ascii=False))
+        print(json.dumps(backup_sqlite(args.backup_sqlite, args.source_sqlite), ensure_ascii=False))
         return 0
+    if args.production_cutover and args.confirm_cutover_target != CUTOVER_DATABASE_NAME:
+        raise SystemExit(f"--production-cutover requires --confirm-cutover-target {CUTOVER_DATABASE_NAME}.")
     if args.export_sqlite:
         result = export_sqlite(args.export_sqlite, args.source_sqlite)
         print(json.dumps(result, ensure_ascii=False))
         return 0
     if args.check and args.source_sqlite:
-        result = check_rehearsal(args.source_sqlite, args.target_url_env)
+        result = check_rehearsal(args.source_sqlite, args.target_url_env, production_cutover=args.production_cutover)
     elif args.import_postgres:
         if not args.source_sqlite:
             raise SystemExit("--import-postgres requires --source-sqlite.")
-        result = import_postgres(args.source_sqlite, args.target_url_env)
+        result = import_postgres(args.source_sqlite, args.target_url_env, production_cutover=args.production_cutover)
     elif args.verify:
         if not args.source_sqlite:
             raise SystemExit("--verify requires --source-sqlite.")
-        result = verify_postgres(args.source_sqlite, args.target_url_env)
+        result = verify_postgres(args.source_sqlite, args.target_url_env, production_cutover=args.production_cutover)
     else:
         print(json.dumps(check(), ensure_ascii=False))
         return 0

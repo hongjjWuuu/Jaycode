@@ -28,7 +28,15 @@ JAYCODE_PERSISTENCE_STORE=postgres
 DATABASE_URL=postgresql://<user>:<password>@<host>:5432/<database>
 ```
 
-`JAYCODE_PERSISTENCE_STORE=postgres` 当前会因所有业务域尚未接入而 fail closed，不会静默回退 SQLite。`python -m app.persistence.migrate --check` 只做连接/配置检查；`--export-sqlite` 导出 SQLite 用户表快照；当前 `--verify` 不是源/目标记录集核验，`--import-postgres` 尚未实现。不得将这些命令描述为已具备全量迁移能力。正式迁移前须实现并通过新收口计划中的隔离演练。
+`JAYCODE_PERSISTENCE_STORE=postgres` 已通过全域 Store、API/Worker E2E 及隔离迁移演练验证，仍不会在连接失败时静默回退 SQLite。正式切换与阶段四演练入口严格分离：演练仅使用 `jaycode_test_*`，正式切换只能由 `scripts/run_stage6_cutover.ps1` 使用 `JAYCODE_CUTOVER_ADMIN_URL` 和 `JAYCODE_CUTOVER_DATABASE_URL` 执行，目标固定为 `jayagent_studio`。该脚本要求维护窗口确认、停止 API/Worker、创建一致性备份、导入与逐表哈希核验后才会更新 `.env`。
+
+正式维护窗口前，可在不修改任何数据的前提下运行：
+
+```powershell
+.\scripts\run_stage6_cutover.ps1 -Action Preflight
+```
+
+维护窗口获明确确认后才可运行 `-Action Execute -ConfirmMaintenanceWindow`。启动 API/Worker 并通过 `-Action VerifyRuntime` 后，仍需单独以 `-Action Commit -ConfirmPostgresCommit` 执行首批跨域 PostgreSQL 写验证；该提交点后不得仅修改 `.env` 回退。
 
 PostgreSQL 集成测试只能显式使用 `JAYCODE_TEST_DATABASE_URL`，并连接 loopback 上名称以 `jaycode_test_` 开头的隔离库；禁止将应用 `DATABASE_URL` 直接用于契约测试。未设置隔离测试 URL 时测试应跳过，而非连接应用库。
 

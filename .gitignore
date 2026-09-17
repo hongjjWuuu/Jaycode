@@ -23,6 +23,7 @@ data/*.db
 data/*.db-*
 data/*.sqlite
 data/*.sqlite3
+data/backups/
 .postgres-data/
 .jaycode/
 *.db

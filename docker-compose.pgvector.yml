@@ -3,7 +3,9 @@ services:
     image: pgvector/pgvector:pg16
     container_name: dev-agent-studio-pgvector
     environment:
-      POSTGRES_DB: dev_agent_studio
+      # Applies on first volume initialization only. Existing volumes are
+      # migrated by scripts/run_stage6_cutover.ps1, never recreated.
+      POSTGRES_DB: jayagent_studio
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
@@ -11,7 +13,7 @@ services:
     volumes:
       - pgvector_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d dev_agent_studio"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d jayagent_studio"]
       interval: 5s
       timeout: 5s
       retries: 20

@@ -1,6 +1,6 @@
 # P1 PostgreSQL 全域接入与迁移收口计划
 
-> 状态：阶段四已通过；阶段五（最终切换前质量门禁）待实施。当前不得切换 PostgreSQL、修改生效 `.env`、导入现有 SQLite 数据或写入现有 PostgreSQL 业务库。
+> 状态：阶段五已通过；阶段六切换工具已就绪，等待单独确认维护窗口。当前不得切换 PostgreSQL、修改生效 `.env`、导入现有 SQLite 数据或写入现有 PostgreSQL 业务库。
 
 ## 目标与当前基线
 
@@ -165,7 +165,7 @@ $env:JAYCODE_TEST_DATABASE_URL = "<只用于本机隔离 jaycode_test_* 数据�
 
 ### 阶段 4 实施记录（2026-09-16，已通过）
 
-- `app/persistence/migration_mapping.py` 已建立当前 27 张业务表的严格 SQLite→PostgreSQL 映射清单；未映射表或列、缺失目标字段、无效 JSON 与不兼容 Schema 均会中止。
+- `app/persistence/migration_mapping.py` 已建立当前 35 张业务表的严格 SQLite→PostgreSQL 映射清单；未映射表或列、缺失目标字段、无效 JSON 与不兼容 Schema 均会中止。
 - `app/persistence/migrate.py` 已支持显式的隔离 `--check`、`--import-postgres`、`--verify`。阶段四目标只能从 `JAYCODE_MIGRATION_TARGET_URL` 读取，明确拒绝 `DATABASE_URL`、非 loopback 和非 `jaycode_test_*` 数据库。
 - 导入会先初始化版本化目标 Schema、检查业务表为空、写入源快照指纹账本，并在单一事务中完成写入；核验比较映射后逐表行数和规范化行哈希。
 - 已新增成功导入/核验、重复导入拒绝、未知表拒绝及无效 JSON 故障回滚测试，并接入随机 PostgreSQL 测试运行器和 CI PostgreSQL Job。
@@ -196,6 +196,19 @@ Ruff → SQLite 全量 pytest → PostgreSQL 全域契约 → PostgreSQL API/Wor
 5. 通过核验后备份原 `.env`（权限受限、不纳入 Git），再将统一 Store 配置设为 PostgreSQL；不在文档、命令历史或日志中打印密码。
 6. 启动 API/Worker，验证 `/health`、`/ready` 及所有业务域读写和审计；验证 PG 不可用时 fail-closed，SQLite 无新增写入。
 7. 保留原 SQLite 数据库和备份。启动验证失败且 PG 尚无新业务写入时，回滚本次迁移并恢复 SQLite 配置；PG 已接受新写入后必须先冻结写入、完成对账及恢复方案，不可仅切换配置回滚。
+
+### 阶段 6 实施准备（2026-09-16）
+
+- 已新增独立 `scripts/run_stage6_cutover.ps1` 与 `app.persistence.cutover`。它们只接受维护连接 `JAYCODE_CUTOVER_ADMIN_URL`（`postgres`）和正式目标 `JAYCODE_CUTOVER_DATABASE_URL`（loopback 上的 `jayagent_studio`），不会使用应用 `DATABASE_URL` 或阶段四测试变量。
+- 切换工具会拒绝 API 端口或 Worker/Supervisor 尚在运行的情况；正式执行时先生成不可覆盖的 `data/backups/dev_agent_studio-pre-postgres-<UTC>.db` 与 manifest，再创建全新目标库、导入、逐表核验，最后才备份并更新 `.env`。
+- `docker-compose.pgvector.yml` 的首次初始化库及健康检查已指向 `jayagent_studio`。对于已有 Docker 数据卷，这不会重命名或清空旧库；运行器将以维护权限显式创建新库并保留 `dev_agent_studio`。
+- 已准备独立的 `scripts/verify_postgres_cutover.py`，其跨域写验证需要额外的显式提交确认。正式维护窗口尚未确认，因此本记录不代表已经备份、导入、修改 `.env` 或切换后端。
+
+### 阶段 6 首次维护执行记录（2026-09-17，未提交）
+
+- 已验证维护前检查并生成只读一致性备份 `data/backups/dev_agent_studio-pre-postgres-20260917T070845Z.db`（35 张表、SQLite 完整性检查通过）。
+- 首次导入在发现 8 张未映射的历史业务表后按 fail-closed 规则中止：`agent_task_node_state`、`benchmark_comparison`、`marketplace_install_snapshot`、`platform_approval`、`platform_query`、`platform_version`、`rag_evaluation_run`、`schema_migration`。运行器仅删除了它在本次创建的空 `jayagent_studio`，未修改 `.env`、原 SQLite 或既有 PostgreSQL 库。
+- 映射清单已升级至 `sqlite-to-postgres-v2`，并新增对应的 PostgreSQL 版本化 Schema 迁移与合成数据演练。重新进行真实切换前，必须先完成隔离 PostgreSQL 演练验证；在此之前阶段六仍未完成，SQLite 仍是生效后端。
 
 ## 最终验收与状态规则
 

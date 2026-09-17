@@ -53,6 +53,110 @@ def _source_database(path: Path, *, invalid_audit_json: bool = False) -> Path:
     )
     with task_store._connect() as connection:
         connection.execute(
+            """INSERT INTO agent_task_node_state(
+                task_id,node_id,state,attempt,error_message,output_json,started_at,finished_at,updated_at
+            ) VALUES (?,?,?,?,?,?,?,?,?)""",
+            (
+                f"migration-task-{suffix}", "migration-node", "completed", 1, None,
+                '{"safe":true}', "2026-09-16T00:00:00+08:00", "2026-09-16T00:00:01+08:00",
+                "2026-09-16T00:00:01+08:00",
+            ),
+        )
+        connection.execute(
+            "INSERT INTO schema_migration(version,name,applied_at) VALUES (?,?,?)",
+            (999, "migration-rehearsal", "2026-09-16T00:00:00+08:00"),
+        )
+        connection.execute(
+            """INSERT INTO benchmark_comparison(
+                comparison_id,current_run_id,baseline_run_id,regression_status,
+                threshold_json,delta_json,created_at
+            ) VALUES (?,?,?,?,?,?,?)""",
+            (
+                f"comparison-{suffix}",
+                f"run-{suffix}",
+                None,
+                "pass",
+                '{"recall_at_8":0.01}',
+                '{"recall_at_8":0.0}',
+                "2026-09-16T00:00:00+08:00",
+            ),
+        )
+        connection.execute(
+            """INSERT INTO marketplace_install_snapshot(
+                snapshot_id,package_id,package_type,manifest_json,state_json,created_at
+            ) VALUES (?,?,?,?,?,?)""",
+            (
+                f"snapshot-{suffix}",
+                f"package-{suffix}",
+                "skill",
+                '{"name":"synthetic"}',
+                '{"installed":true}',
+                "2026-09-16T00:00:00+08:00",
+            ),
+        )
+        connection.execute(
+            """INSERT INTO platform_version(
+                version_id,object_type,object_id,version,status,manifest_json,created_by,created_at,activated_at
+            ) VALUES (?,?,?,?,?,?,?,?,?)""",
+            (
+                f"version-{suffix}",
+                "skill",
+                f"package-{suffix}",
+                "1.0.0",
+                "active",
+                '{"safe":true}',
+                "migration-test",
+                "2026-09-16T00:00:00+08:00",
+                "2026-09-16T00:00:01+08:00",
+            ),
+        )
+        connection.execute(
+            """INSERT INTO platform_approval(
+                approval_id,object_type,object_id,version_id,actor_id,decision,reason,created_at
+            ) VALUES (?,?,?,?,?,?,?,?)""",
+            (
+                f"approval-{suffix}",
+                "skill",
+                f"package-{suffix}",
+                f"version-{suffix}",
+                "migration-test",
+                "approved",
+                "synthetic",
+                "2026-09-16T00:00:00+08:00",
+            ),
+        )
+        connection.execute(
+            """INSERT INTO platform_query(
+                query_id,query_type,actor_id,task_id,input_json,result_json,score_json,created_at
+            ) VALUES (?,?,?,?,?,?,?,?)""",
+            (
+                f"query-{suffix}",
+                "search",
+                "migration-test",
+                f"migration-task-{suffix}",
+                '{"query":"synthetic"}',
+                '{"items":[]}',
+                '{"score":1.0}',
+                "2026-09-16T00:00:00+08:00",
+            ),
+        )
+        connection.execute(
+            """INSERT INTO rag_evaluation_run(
+                run_id,collection,actor_id,case_count,hit_count,recall_at_8,mrr,result_json,created_at
+            ) VALUES (?,?,?,?,?,?,?,?,?)""",
+            (
+                f"rag-eval-{suffix}",
+                "default",
+                "migration-test",
+                1,
+                1,
+                1.0,
+                1.0,
+                '{"case_ids":[]}',
+                "2026-09-16T00:00:00+08:00",
+            ),
+        )
+        connection.execute(
             """INSERT INTO security_audit_log(
                 audit_id,request_id,actor_id,role,action,resource_type,resource_id,status,metadata_json,created_at
             ) VALUES (?,?,?,?,?,?,?,?,?,?)""",
@@ -79,6 +183,14 @@ def test_rehearsal_import_verify_and_repeat_rejection(tmp_path: Path) -> None:
 
     imported = import_postgres(source, TARGET_ENV)
     assert imported["tables"]["agent_task"]["row_count"] == 1
+    assert imported["tables"]["agent_task_node_state"]["row_count"] == 1
+    assert imported["tables"]["benchmark_comparison"]["row_count"] == 1
+    assert imported["tables"]["marketplace_install_snapshot"]["row_count"] == 1
+    assert imported["tables"]["platform_approval"]["row_count"] == 1
+    assert imported["tables"]["platform_query"]["row_count"] == 1
+    assert imported["tables"]["platform_version"]["row_count"] == 1
+    assert imported["tables"]["rag_evaluation_run"]["row_count"] == 1
+    assert imported["tables"]["schema_migration"]["row_count"] == 1
     assert verify_postgres(source, TARGET_ENV)["tables"]["security_audit_log"]["row_count"] == 1
     with pytest.raises(ValueError, match="contains business data|ledger"):
         import_postgres(source, TARGET_ENV)
