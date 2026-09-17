@@ -41,7 +41,7 @@ def empty_rehearsal_target(monkeypatch: pytest.MonkeyPatch) -> None:
 def _source_database(path: Path, *, invalid_audit_json: bool = False) -> Path:
     task_store = SQLiteTaskStore(path)
     SQLiteMemoryStore(path)
-    SQLiteRagStore(path)
+    rag_store = SQLiteRagStore(path)
     suffix = uuid4().hex
     task_store.create_task(
         f"migration-task-{suffix}",
@@ -74,6 +74,11 @@ def _source_database(path: Path, *, invalid_audit_json: bool = False) -> Path:
         None,
         [{"id": "node-1", "kind": "synthetic"}],
         [],
+    )
+    rag_store.ingest(
+        "migration",
+        [{"path": "synthetic.md", "size": 1}],
+        [{"chunk_id": f"migration-chunk-{suffix}", "path": "synthetic.md", "content": "synthetic"}],
     )
     with task_store._connect() as connection:
         # These legacy tables exist in the production SQLite snapshot but are
@@ -255,6 +260,8 @@ def test_rehearsal_import_verify_and_repeat_rejection(tmp_path: Path) -> None:
     imported = import_postgres(source, TARGET_ENV)
     assert imported["tables"]["agent_task"]["row_count"] == 2
     assert imported["tables"]["workflow_definition"]["row_count"] == 1
+    assert imported["tables"]["rag_document"]["row_count"] == 1
+    assert imported["tables"]["rag_chunk"]["row_count"] == 1
     assert imported["tables"]["agent_task_node_state"]["row_count"] == 1
     assert imported["tables"]["benchmark_comparison"]["row_count"] == 1
     assert imported["tables"]["marketplace_install_snapshot"]["row_count"] == 1

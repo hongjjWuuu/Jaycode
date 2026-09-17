@@ -55,6 +55,9 @@ class TableMapping:
     aliases: Mapping[str, str]
     generated_target_columns: frozenset[str] = frozenset()
     ignored_source_columns: frozenset[str] = frozenset({"id"})
+    # Values generated solely for the PostgreSQL representation are written
+    # during import but must not participate in source-data verification.
+    verification_excluded_target_columns: frozenset[str] = frozenset()
 
 
 _DEFAULT = TableMapping(source_table="", target_table="", aliases={})
@@ -103,7 +106,12 @@ TABLE_MAPPINGS.update(
             "rag_document", "rag_document", {}, frozenset({"id"}), frozenset({"id"})
         ),
         "rag_chunk": TableMapping(
-            "rag_chunk", "rag_chunk", {}, frozenset({"id"}), frozenset({"id"})
+            "rag_chunk",
+            "rag_chunk",
+            {},
+            frozenset({"id"}),
+            frozenset({"id"}),
+            frozenset({"embedding", "embedding_source"}),
         ),
     }
 )

@@ -469,6 +469,16 @@ def _insert_rows(connection: Any, table: str, rows: list[dict[str, Any]], target
     return hashes
 
 
+def _comparison_rows(
+    table: str, rows: list[dict[str, Any]], target_columns: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    excluded = TABLE_MAPPINGS[table].verification_excluded_target_columns
+    return [
+        {column: value for column, value in _mapped_row(table, row, target_columns).items() if column not in excluded}
+        for row in rows
+    ]
+
+
 def _comparison_hashes(
     table: str, rows: list[dict[str, Any]], target_columns: list[dict[str, Any]]
 ) -> list[str]:
@@ -480,7 +490,7 @@ def _comparison_hashes(
     filling an omitted nullable value with ``None``, otherwise equivalent rows
     produce different hashes.
     """
-    mapped_rows = [_mapped_row(table, row, target_columns) for row in rows]
+    mapped_rows = _comparison_rows(table, rows, target_columns)
     columns = sorted({column for row in mapped_rows for column in row})
     return [_row_digest({column: row.get(column) for column in columns}) for row in mapped_rows]
 
@@ -539,7 +549,7 @@ def verify_postgres(source: Path, target_url_env: str, *, production_cutover: bo
         for table, rows in source_rows.items():
             metadata = _target_columns(connection, TABLE_MAPPINGS[table].target_table)
             _validate_table_schema(table, source_columns[table], metadata)
-            mapped_rows = [_mapped_row(table, row, metadata) for row in rows]
+            mapped_rows = _comparison_rows(table, rows, metadata)
             columns = sorted({column for row in mapped_rows for column in row})
             source_hashes = [
                 _row_digest({column: row.get(column) for column in columns})
