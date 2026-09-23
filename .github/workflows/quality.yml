@@ -53,17 +53,16 @@ jobs:
         env:
           POSTGRES_USER: jaycode
           POSTGRES_PASSWORD: jaycode-ci
-          POSTGRES_DB: jaycode_test_ci
+          POSTGRES_DB: postgres
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U jaycode -d jaycode_test_ci"
+          --health-cmd "pg_isready -U jaycode -d postgres"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 12
     env:
-      JAYCODE_TEST_DATABASE_URL: postgresql://jaycode:jaycode-ci@localhost:5432/jaycode_test_ci
-      JAYCODE_MIGRATION_TARGET_URL: postgresql://jaycode:jaycode-ci@localhost:5432/jaycode_test_ci
+      JAYCODE_TEST_ADMIN_URL: postgresql://jaycode:jaycode-ci@localhost:5432/postgres
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -71,4 +70,4 @@ jobs:
           python-version: "3.13"
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e ".[dev,vector]"
-      - run: pytest -q tests -m postgres
+      - run: python scripts/run_postgres_contracts.py

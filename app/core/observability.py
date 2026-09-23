@@ -49,6 +49,20 @@ class MetricsRegistry:
 metrics = MetricsRegistry()
 
 
+def record_domain_operation(
+    domain: str,
+    operation: str,
+    started: float,
+    *,
+    status: str,
+    error_code: str = "",
+) -> None:
+    """Record low-cardinality domain results without leaking request payloads."""
+    labels = {"domain": domain, "operation": operation, "status": status, "error_code": error_code or "none"}
+    metrics.inc("jaycode_domain_operations_total", labels=labels)
+    metrics.observe("jaycode_domain_operation", started, labels=labels)
+
+
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         payload: dict[str, Any] = {
@@ -56,7 +70,7 @@ class JsonFormatter(logging.Formatter):
             "level": record.levelname,
             "event": record.getMessage(),
         }
-        for key in ("request_id", "task_id", "worker_id", "actor_id", "role", "status", "latency_ms", "error_code"):
+        for key in ("request_id", "task_id", "trace_id", "worker_id", "actor_id", "role", "status", "latency_ms", "error_code"):
             if hasattr(record, key):
                 payload[key] = getattr(record, key)
         return json.dumps(payload, ensure_ascii=False)

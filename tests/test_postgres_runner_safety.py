@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from scripts.run_postgres_contracts import _admin_target, _child_url
+from scripts.run_postgres_contracts import _admin_target, _child_url, _contains_skips
 
 
 def test_postgres_runner_requires_dedicated_admin_url(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -34,3 +34,8 @@ def test_postgres_runner_builds_child_url_for_random_test_database() -> None:
     assert _child_url(admin_url, "jaycode_test_abc123") == (
         "postgresql://tester:secret@[::1]:5432/jaycode_test_abc123?sslmode=disable"
     )
+
+
+def test_postgres_runner_detects_skipped_contract_tests() -> None:
+    assert _contains_skips("12 passed, 1 skipped in 2.4s")
+    assert not _contains_skips("13 passed in 2.4s")

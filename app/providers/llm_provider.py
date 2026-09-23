@@ -9,6 +9,7 @@ from uuid import uuid4
 from pydantic import BaseModel, ValidationError
 
 from app.core.security import execution_auth_context
+from app.core.observability import record_domain_operation
 from app.harness.events import utc_now_iso
 from app.persistence.factory import get_persistence_stores
 
@@ -284,6 +285,7 @@ class LLMProvider:
                 latency_ms=latency_ms,
                 token_usage={},
             )
+            record_domain_operation("llm", "generate", started, status="fallback", error_code="API_KEY_UNAVAILABLE")
             return {
                 "text": fallback,
                 "answer_source": "fallback",
@@ -323,6 +325,7 @@ class LLMProvider:
                 latency_ms=latency_ms,
                 token_usage=token_usage,
             )
+            record_domain_operation("llm", "generate", started, status="success")
             return {
                 "text": output_text,
                 "answer_source": "llm",
@@ -346,6 +349,7 @@ class LLMProvider:
                 latency_ms=latency_ms,
                 token_usage={},
             )
+            record_domain_operation("llm", "generate", started, status="fallback", error_code=type(exc).__name__)
             return {
                 "text": fallback,
                 "answer_source": "fallback",

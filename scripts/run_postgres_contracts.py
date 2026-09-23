@@ -14,6 +14,7 @@ LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PG_URL_PATTERN = re.compile(r"(?i)\bpostgres(?:ql)?://[^\s'\"]+")
 SECRET_PATTERN = re.compile(r"(?i)\b(password|pwd|token|secret|api[_-]?key)=([^\s&]+)")
+SKIP_SUMMARY_PATTERN = re.compile(r"\b\d+\s+skipped\b", re.IGNORECASE)
 
 
 def _redact(text: str, *urls: str) -> str:
@@ -41,6 +42,10 @@ def _admin_target() -> tuple[str, str]:
 def _child_url(admin_url: str, database: str) -> str:
     parsed = urlsplit(admin_url)
     return urlunsplit((parsed.scheme, parsed.netloc, f"/{quote(database)}", parsed.query, parsed.fragment))
+
+
+def _contains_skips(output: str) -> bool:
+    return bool(SKIP_SUMMARY_PATTERN.search(output))
 
 
 def _run() -> int:
@@ -72,18 +77,18 @@ def _run() -> int:
             "-m",
             "pytest",
             "-q",
-            "tests/test_postgres_migration_rehearsal.py",
-            "tests/test_postgres_store.py",
-            "tests/test_postgres_memory_store.py",
-            "tests/test_postgres_rag_store.py",
-            "tests/test_postgres_test_config.py",
-            "tests/test_postgres_migrations.py",
-            "tests/test_cross_backend_contracts.py",
-            "tests/test_postgres_e2e.py",
+            "-rs",
+            "--strict-markers",
+            "tests",
+            "-m",
+            "postgres",
         ]
         result = subprocess.run(command, cwd=REPO_ROOT, env=environment, capture_output=True, text=True, check=False)
-        exit_code = result.returncode
         output = _redact(result.stdout + result.stderr, admin_url, test_url)
+        exit_code = result.returncode
+        if exit_code == 0 and _contains_skips(output):
+            print("ERROR: isolated PostgreSQL contract run reported skipped tests.", file=sys.stderr)
+            exit_code = 1
         print(f"Temporary PostgreSQL test database: {database}")
         print(output, end="" if output.endswith("\n") or not output else "\n")
     except (psycopg.Error, OSError) as exc:

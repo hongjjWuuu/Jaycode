@@ -161,64 +161,66 @@ def run_compiled_workflow(
     extra_state: dict[str, Any] | None = None,
     entry_node_id: str | None = None,
 ) -> dict[str, Any]:
-    # 1. 标准化
-    normalized_nodes = _normalize_nodes(nodes)
-    normalized_edges = _normalize_edges(normalized_nodes, edges or [])
-    # 2. 校验
-    validation = validate_workflow_definition(normalized_nodes, normalized_edges)
-    # 3. 编译
-    graph = compile_workflow_graph(workflow_name, normalized_nodes, normalized_edges, entry_node_id)
-     # 4. 构建初始状态
-    initial_state: dict[str, Any] = {
-        "workflow_name": workflow_name,
-        "input_text": input_text,
-        "goal": input_text,
-        "current": input_text,
-        "events": [],
-        "outputs": {},
-        "tool_calls": [],
-        "agent_outputs": [],
-        "suggestions": [],
-        "validation": validation,
-    }
-    # 如果是恢复模式，合并之前的现场
-    if extra_state:
-        initial_state.update({key: value for key, value in extra_state.items() if key != "events"})
-        initial_state["events"] = []
-        if extra_state.get("resume_mode"):
-            initial_state["current"] = extra_state.get("current") or extra_state.get("input_text") or extra_state.get("goal") or input_text
-            initial_state["pause_workflow"] = False
-            initial_state["human_review_packet"] = {}
-        else:
-            initial_state["current"] = extra_state.get("input_text") or extra_state.get("goal") or input_text
-    
-    # 5. 运行
-    result = graph.invoke(initial_state)
+    from app.core.observability import record_domain_operation
+    import time
 
-    # 6. 生成产物
-    final_report = result.get("final_report") or _build_final_report(result)
-    resume_checkpoint = _build_resume_checkpoint(
-        workflow_name,
-        input_text,
-        normalized_nodes,
-        normalized_edges,
-        result,
-        entry_node_id,
-    )
-    return {
-        "workflow_name": workflow_name,
-        "events": result.get("events", []),
-        "output": result.get("current", ""),
-        "final_report": final_report,
-        "mermaid": result.get("mermaid") or _build_mermaid(_normalize_nodes(nodes), edges or []),
-        "suggestions": result.get("suggestions", []),
-        "tool_calls": result.get("tool_calls", []),
-        "agent_outputs": result.get("agent_outputs", []),
-        "human_review_packet": result.get("human_review_packet"),
-        "validation": validation,
-        "outputs": result.get("outputs", {}),
-        "resume_checkpoint": resume_checkpoint,
-    }
+    started = time.perf_counter()
+    try:
+        normalized_nodes = _normalize_nodes(nodes)
+        normalized_edges = _normalize_edges(normalized_nodes, edges or [])
+        validation = validate_workflow_definition(normalized_nodes, normalized_edges)
+        graph = compile_workflow_graph(workflow_name, normalized_nodes, normalized_edges, entry_node_id)
+        initial_state: dict[str, Any] = {
+            "workflow_name": workflow_name,
+            "input_text": input_text,
+            "goal": input_text,
+            "current": input_text,
+            "events": [],
+            "outputs": {},
+            "tool_calls": [],
+            "agent_outputs": [],
+            "suggestions": [],
+            "validation": validation,
+        }
+        if extra_state:
+            initial_state.update({key: value for key, value in extra_state.items() if key != "events"})
+            initial_state["events"] = []
+            if extra_state.get("resume_mode"):
+                initial_state["current"] = extra_state.get("current") or extra_state.get("input_text") or extra_state.get("goal") or input_text
+                initial_state["pause_workflow"] = False
+                initial_state["human_review_packet"] = {}
+            else:
+                initial_state["current"] = extra_state.get("input_text") or extra_state.get("goal") or input_text
+    
+        result = graph.invoke(initial_state)
+        final_report = result.get("final_report") or _build_final_report(result)
+        resume_checkpoint = _build_resume_checkpoint(
+            workflow_name,
+            input_text,
+            normalized_nodes,
+            normalized_edges,
+            result,
+            entry_node_id,
+        )
+        response = {
+            "workflow_name": workflow_name,
+            "events": result.get("events", []),
+            "output": result.get("current", ""),
+            "final_report": final_report,
+            "mermaid": result.get("mermaid") or _build_mermaid(_normalize_nodes(nodes), edges or []),
+            "suggestions": result.get("suggestions", []),
+            "tool_calls": result.get("tool_calls", []),
+            "agent_outputs": result.get("agent_outputs", []),
+            "human_review_packet": result.get("human_review_packet"),
+            "validation": validation,
+            "outputs": result.get("outputs", {}),
+            "resume_checkpoint": resume_checkpoint,
+        }
+        record_domain_operation("workflow", "execute", started, status="success")
+        return response
+    except Exception as exc:
+        record_domain_operation("workflow", "execute", started, status="failed", error_code=type(exc).__name__)
+        raise
 
 # 入口函数
 # 从 Harness Runtime 传入的状态里提取参数，调 run_compiled_workflow()

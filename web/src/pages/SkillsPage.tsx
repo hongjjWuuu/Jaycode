@@ -2,6 +2,7 @@ import { FileText, History, Play, Puzzle, RefreshCw, ShieldCheck } from 'lucide-
 import { FormEvent, useEffect, useState } from 'react';
 
 import { EnabledState, FieldHelp, PanelTitle, RiskBadge } from '../components/DisplayPrimitives';
+import { ApiErrorNotice } from '../components/ApiErrorNotice';
 import { listSkillVersions, rollbackSkillVersion, testSkill } from '../services/skills';
 import type { SkillApproval, SkillExecutionLog, SkillPlugin, SkillRecord, SkillTestResult, SkillVersionSnapshot } from '../types';
 
@@ -31,6 +32,7 @@ export function SkillsPage({
   const [inputText, setInputText] = useState('{}');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [message, setMessage] = useState('');
+  const [error, setError] = useState<unknown>(null);
   const [result, setResult] = useState<Record<string, unknown> | null>(null);
   const [versions, setVersions] = useState<SkillVersionSnapshot[]>([]);
   const [testResult, setTestResult] = useState<SkillTestResult | null>(null);
@@ -47,13 +49,13 @@ export function SkillsPage({
       if (nextInput[key] === '.' || !nextInput[key]) nextInput[key] = projectPath;
     }
     setInputText(JSON.stringify(nextInput, null, 2));
-    setResult(null); setTestResult(null); setMessage('');
+    setResult(null); setTestResult(null); setMessage(''); setError(null);
     listSkillVersions(selectedSkill.code).then(setVersions).catch(() => setVersions([]));
   }, [selectedSkill?.code, projectPath]);
 
   async function runAction(label: string, action: () => Promise<unknown>) {
-    setMessage('');
-    try { await action(); setMessage(`${label} completed.`); } catch (error) { setMessage(error instanceof Error ? error.message : `${label} failed`); }
+    setMessage(''); setError(null);
+    try { await action(); setMessage(`${label} completed.`); } catch (cause) { setError(cause); }
   }
 
   async function submitExecution(event: FormEvent) {
@@ -120,7 +122,7 @@ export function SkillsPage({
       <div className="panel skill-execute-panel">
         <PanelTitle icon={<Play size={17} />} title="测试调用" />
         <form className="skill-form" onSubmit={submitExecution}><label>input JSON<textarea value={inputText} onChange={(event) => setInputText(event.target.value)} /><FieldHelp>这里是传给 Skill 的输入。项目类 Skill 会读取 project_path / root_path / repo_path。</FieldHelp></label><button className="primary" disabled={!selectedSkill || !selectedSkill.enabled} type="submit"><Play size={16} />测试调用 Skill</button><button className="secondary" disabled={!selectedSkill || !selectedSkill.enabled} type="button" onClick={submitSkillTests}>运行自带测试</button></form>
-        <div className="skill-execute-output">{message ? <p className="skill-message">{message}</p> : null}{testResult ? <div className="skill-test-summary"><strong>测试结果：{testResult.passed}/{testResult.total} passed</strong><pre>{JSON.stringify(testResult.results, null, 2)}</pre></div> : null}{result ? <pre className="skill-result">{JSON.stringify(result, null, 2)}</pre> : <p className="empty-text">暂无测试输出。</p>}</div>
+        <div className="skill-execute-output">{message ? <p className="skill-message">{message}</p> : null}<ApiErrorNotice error={error} />{testResult ? <div className="skill-test-summary"><strong>测试结果：{testResult.passed}/{testResult.total} passed</strong><pre>{JSON.stringify(testResult.results, null, 2)}</pre></div> : null}{result ? <pre className="skill-result">{JSON.stringify(result, null, 2)}</pre> : <p className="empty-text">暂无测试输出。</p>}</div>
       </div>
 
       <div className="panel skill-log-panel">

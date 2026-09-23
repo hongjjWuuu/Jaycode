@@ -2,6 +2,7 @@ import { Check, FileText, History, Puzzle, RefreshCw } from 'lucide-react';
 import { useState } from 'react';
 
 import { FieldHelp, PanelTitle } from '../components/DisplayPrimitives';
+import { ApiErrorNotice } from '../components/ApiErrorNotice';
 import type { MarketplaceCatalogItem, MarketplaceInstall, MarketplacePreview } from '../types';
 
 type MarketplacePageProps = {
@@ -25,6 +26,7 @@ export function MarketplacePage({
   const [sourceUrl, setSourceUrl] = useState('builtin://security-governance-skill-pack');
   const [packageType, setPackageType] = useState('all');
   const [message, setMessage] = useState('');
+  const [error, setError] = useState<unknown>(null);
   const filteredCatalog = packageType === 'all' ? catalog : catalog.filter((item) => item.package_type === packageType);
   const packageTypes = ['all', 'skill_pack', 'rag_pack', 'mcp_pack', 'benchmark_pack', 'workflow_pack', 'prompt_pack'];
   const latestInstallByPackage = new Map<string, MarketplaceInstall>();
@@ -41,11 +43,12 @@ export function MarketplacePage({
 
   async function runAction(label: string, action: () => Promise<unknown>) {
     setMessage('');
+    setError(null);
     try {
       await action();
       setMessage(`${label} completed.`);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : `${label} failed`);
+    } catch (cause) {
+      setError(cause);
     }
   }
 
@@ -69,7 +72,7 @@ export function MarketplacePage({
             <button type="button" className="primary" onClick={() => runAction('Install', () => onInstall(sourceUrl))}>安装插件包</button>
           </div>
         </form>
-        {message ? <p className="marketplace-message">{message}</p> : null}
+        {message ? <p className="marketplace-message">{message}</p> : null}<ApiErrorNotice error={error} />
         <div className="marketplace-type-row">
           {installCounts.map((item) => <KpiCard key={item.type} label={marketplaceTypeLabel(item.type)} value={String(item.count)} />)}
         </div>

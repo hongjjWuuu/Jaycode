@@ -2,6 +2,7 @@ import { Activity, RefreshCw, Wrench } from 'lucide-react';
 import { FormEvent, useState } from 'react';
 
 import { EnabledState, FieldHelp, PanelTitle } from '../components/DisplayPrimitives';
+import { ApiErrorNotice } from '../components/ApiErrorNotice';
 import type { McpRegisteredTool, McpServerConfig, McpStatus, McpToolCallLog } from '../types';
 
 type McpPageProps = {
@@ -28,6 +29,7 @@ export function McpPage({ projectPath, status, servers, tools, logs, onRefresh, 
   const [callArgsText, setCallArgsText] = useState(defaultMcpCallArguments('read_text_file', 'real_filesystem'));
   const [callResult, setCallResult] = useState<Record<string, unknown> | null>(null);
   const [message, setMessage] = useState('');
+  const [error, setError] = useState<unknown>(null);
   const activeServerId = selectedServerId || servers[0]?.server_id || '';
   const visibleTools = activeServerId ? tools.filter((tool) => tool.server_id === activeServerId) : tools;
   const activeToolName = selectedToolName || visibleTools[0]?.name || '';
@@ -38,13 +40,13 @@ export function McpPage({ projectPath, status, servers, tools, logs, onRefresh, 
     setServerDraft({ server_id: server.server_id, name: server.name, transport: server.transport, command: server.command ?? '', argsText: JSON.stringify(server.args ?? [], null, 2), envText: JSON.stringify(server.env ?? {}, null, 2), url: server.url ?? '', enabled: server.enabled });
     setMessage(`已载入 ${server.server_id}`);
   }
-  async function runAction(label: string, action: () => Promise<unknown>) { setMessage(''); try { await action(); setMessage(`${label} 已完成。`); } catch (error) { setMessage(error instanceof Error ? error.message : `${label} 失败`); } }
+  async function runAction(label: string, action: () => Promise<unknown>) { setMessage(''); setError(null); try { await action(); setMessage(`${label} 已完成。`); } catch (cause) { setError(cause); } }
   async function submitServer(event: FormEvent) {
-    event.preventDefault(); setMessage('');
+    event.preventDefault(); setMessage(''); setError(null);
     try {
       await onSaveServer({ server_id: serverDraft.server_id.trim(), name: serverDraft.name.trim(), transport: serverDraft.transport, command: serverDraft.command.trim(), args: parseJsonValue<string[]>(serverDraft.argsText, []), env: parseJsonValue<Record<string, string>>(serverDraft.envText, {}), url: serverDraft.url.trim(), enabled: serverDraft.enabled });
       setSelectedServerId(serverDraft.server_id.trim()); setMessage('MCP Server 已保存。');
-    } catch (error) { setMessage(error instanceof Error ? error.message : 'MCP Server 保存失败'); }
+    } catch (cause) { setError(cause); }
   }
   async function submitCall(event: FormEvent) { event.preventDefault(); await runAction('工具调用', async () => setCallResult(await onCallTool({ server_id: activeServerId || undefined, tool_name: activeToolName, agent_code: agentCode, arguments: parseJsonValue<Record<string, unknown>>(callArgsText, {}) }))); }
 
@@ -60,7 +62,7 @@ export function McpPage({ projectPath, status, servers, tools, logs, onRefresh, 
     </div>
     <div className="panel mcp-call-panel"><PanelTitle icon={<Activity size={17} />} title="调用与日志" />
       <form className="mcp-form" onSubmit={submitCall}><label>agent_code<input value={agentCode} onChange={(event) => setAgentCode(event.target.value)} /><FieldHelp>审批时使用同一个 agent_code。</FieldHelp></label><label>tool_name<input value={activeToolName} onChange={(event) => setSelectedToolName(event.target.value)} /></label><label>arguments JSON<textarea value={callArgsText} onChange={(event) => setCallArgsText(event.target.value)} /></label><label>approval reason<input value={approvalReason} onChange={(event) => setApprovalReason(event.target.value)} /></label><button className="primary" disabled={!activeToolName} type="submit">测试调用</button></form>
-      {message ? <p className="mcp-message">{message}</p> : null}{callResult ? <pre className="mcp-result">{JSON.stringify(callResult, null, 2)}</pre> : null}
+      {message ? <p className="mcp-message">{message}</p> : null}<ApiErrorNotice error={error} />{callResult ? <pre className="mcp-result">{JSON.stringify(callResult, null, 2)}</pre> : null}
       <div className="mcp-log-list">{logs.map((log) => <article key={log.call_id} className={`mcp-log-item ${log.status}`}><div className="mcp-log-head"><strong>{log.tool_name}</strong><span>{log.server_id || 'local'}</span><span className={`mcp-log-status ${log.status}`}>{log.status}</span><span>{log.latency_ms}ms</span></div><p className="mcp-log-brief"><span>输入</span>{summarizeMcpLogInput(log)}</p><p className="mcp-log-brief"><span>{log.status === 'failed' ? '错误' : '结果'}</span>{summarizeMcpLogOutput(log)}</p><details className="mcp-log-details"><summary><span>查看完整 JSON</span></summary><pre>{JSON.stringify(log, null, 2)}</pre></details></article>)}{!logs.length ? <p className="empty-text">暂无 MCP 调用日志。</p> : null}</div>
     </div>
   </section>;
