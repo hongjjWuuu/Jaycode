@@ -16,3 +16,8 @@ export function RiskBadge({ level }: { level?: string }) {
   const value = (level || 'low').toLowerCase();
   return <span className={`risk-badge ${value}`}>risk: {value}</span>;
 }
+
+/** Shared metric tile used by the governance consoles without changing existing CSS. */
+export function KpiCard({ label, value }: { label: string; value: string }) {
+  return <div className="kpi-card"><span>{label}</span><strong>{value}</strong></div>;
+}

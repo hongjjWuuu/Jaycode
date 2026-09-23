@@ -35,18 +35,7 @@ import {
   listKnowledgeDocuments, listMemories, listRagGoldCases, queryKnowledge, rejectMemory, saveRagGoldCase,
 } from '../services/rag';
 import { chatLearningCoach, createTaskLearningPlan, listLearningPlans, updateLearningPlanStatus } from '../services/learning';
-import { getLlmUsage, listLlmPrompts, listLlmTraces, runLlmPromptAbTest, saveLlmPrompt, setActiveLlmPrompt } from '../services/llm';
-import {
-  callMcpTool, discoverMcpServer, getMcpStatus, listMcpRegisteredTools, listMcpServers,
-  listMcpToolCallLogs, listProjectFiles, saveMcpServer, setMcpRegisteredToolEnabled,
-  setMcpServerEnabled, setMcpToolApproval,
-} from '../services/mcp';
-import {
-  executeSkill, listSkillApprovals, listSkillExecutionLogs, listSkillPlugins, listSkillVersions,
-  listSkills, rollbackSkillVersion, setSkillApproval, setSkillEnabled, testSkill, uninstallSkillPlugin,
-} from '../services/skills';
-import { installMarketplacePackage, listMarketplaceCatalog, listMarketplaceInstalls, previewMarketplacePackage, uninstallMarketplacePackage } from '../services/marketplace';
-import { getBenchmark, listBenchmarks, runBenchmark } from '../services/benchmarks';
+import { listProjectFiles } from '../services/projectFiles';
 import { listWorkflows, saveWorkflow, updateWorkflow, validateWorkflow } from '../services/workflows';
 import {
   AgentEvent,
@@ -96,16 +85,18 @@ import { ViewKey, useViewNavigation } from '../hooks/useViewNavigation';
 import { useTaskWorkspace } from '../hooks/useTaskWorkspace';
 import { useWorkflowEditor } from '../hooks/useWorkflowEditor';
 import { ChatMessage, ChatMode, useKnowledgeChat } from '../hooks/useKnowledgeChat';
+import { useGovernanceConsole } from '../hooks/useGovernanceConsole';
 import { EnabledState, FieldHelp, PanelTitle, RiskBadge } from '../components/DisplayPrimitives';
-import { BenchmarkPage as BenchmarkWorkspacePage } from './BenchmarkPage';
-import { ChatWorkspacePage } from './ChatPage';
-import { HistoryPage } from './HistoryPage';
-import { LlmPage } from './LlmPage';
+import { PageBoundary } from '../components/PageBoundary';
+import { BenchmarkPage as BenchmarkConsolePage } from './BenchmarkPage';
+import { ChatWorkspacePage as ChatConsolePage } from './ChatPage';
+import { HistoryPage as HistoryWorkspacePage } from './HistoryPage';
+import { LlmPage as LlmConsolePage } from './LlmPage';
 import { MarketplacePage } from './MarketplacePage';
-import { McpPage } from './McpPage';
-import { ReportsPage } from './ReportsPage';
+import { McpPage as McpConsolePage } from './McpPage';
+import { ReportsPage as ReportsWorkspacePage } from './ReportsPage';
 import { RunPage } from './RunPage';
-import { SkillsWorkspacePage } from './SkillsPage';
+import { SkillsPage as SkillsConsolePage } from './SkillsPage';
 import { WorkflowPage } from './WorkflowPage';
 type FocusKind = 'module' | 'file';
 type ReportTab = 'final' | 'mentor' | 'mermaid' | 'governance';
@@ -195,17 +186,42 @@ const initialEdges: WorkflowEdge[] = [
   { source: 'review', target: 'report' },
 ];
 
+const MarketplaceFrame = ({ children }: { children: ReactNode }) => (
+  <PageBoundary name="marketplace">{children}</PageBoundary>
+);
+const SkillsFrame = ({ children }: { children: ReactNode }) => (
+  <PageBoundary name="skills">{children}</PageBoundary>
+);
+const McpFrame = ({ children }: { children: ReactNode }) => (
+  <PageBoundary name="mcp">{children}</PageBoundary>
+);
+const LlmFrame = ({ children }: { children: ReactNode }) => (
+  <PageBoundary name="llm">{children}</PageBoundary>
+);
+const BenchmarkFrame = ({ children }: { children: ReactNode }) => (
+  <PageBoundary name="benchmark">{children}</PageBoundary>
+);
+const ReportsFrame = ({ children }: { children: ReactNode }) => (
+  <PageBoundary name="reports">{children}</PageBoundary>
+);
+const HistoryFrame = ({ children }: { children: ReactNode }) => (
+  <PageBoundary name="history">{children}</PageBoundary>
+);
+const ChatFrame = ({ children }: { children: ReactNode }) => (
+  <PageBoundary name="chat">{children}</PageBoundary>
+);
+
 const pageFrames: Record<ViewKey, ComponentType<{ children: ReactNode }>> = {
   run: RunPage,
   workflow: WorkflowPage,
-  reports: ReportsPage,
-  chat: ChatWorkspacePage,
-  history: HistoryPage,
-  llm: LlmPage,
-  mcp: McpPage,
-  skills: SkillsWorkspacePage,
-  marketplace: MarketplacePage,
-  benchmark: BenchmarkWorkspacePage,
+  reports: ReportsFrame,
+  chat: ChatFrame,
+  history: HistoryFrame,
+  llm: LlmFrame,
+  mcp: McpFrame,
+  skills: SkillsFrame,
+  marketplace: MarketplaceFrame,
+  benchmark: BenchmarkFrame,
 };
 
 export function WorkspaceApp() {
@@ -214,6 +230,7 @@ export function WorkspaceApp() {
   const taskWorkspace = useTaskWorkspace();
   const workflowEditor = useWorkflowEditor(initialNodes, initialEdges);
   const knowledgeChat = useKnowledgeChat();
+  const governance = useGovernanceConsole();
   const {
     tasks, setTasks, selectedTaskId, setSelectedTaskId, events, setEvents,
     finalReport, setFinalReport, refreshTasks,
@@ -230,6 +247,16 @@ export function WorkspaceApp() {
     learningPlans, refreshMemories, refreshLearningPlans, confirm: confirmMemoryCandidate,
     reject: rejectMemoryCandidate, remove: removeMemoryCandidate, setPlanStatus,
   } = knowledgeChat;
+  const {
+    llmTraces, llmTraceAgent, llmPrompts, llmUsage, llmAgentFilter,
+    mcpStatus, mcpServers, mcpTools, mcpLogs, skillPlugins, skills, skillApprovals, skillLogs, selectedSkillCode, setSelectedSkillCode,
+    marketplaceCatalog, marketplaceInstalls, marketplacePreview, lastMarketplaceInstall,
+    benchmarkRuns, selectedBenchmark, benchmarkType, benchmarkRunning, benchmarkError,
+    executeBenchmark, openBenchmark, changeBenchmarkType, refreshLlmTraces, refreshLlmGovernance, refreshMcp, refreshSkills, refreshMarketplace, refreshBenchmarks,
+    changeLlmAgent, changeLlmTraceAgent, refreshLlm, activateLlmPrompt, savePrompt, runPromptAbTest,
+    saveServer, setServerEnabled, discoverServer, setToolEnabled, setToolApproval, invokeTool,
+    setSkillStatus, loadSkillApprovals, updateSkillApproval, runSkill, removeSkillPlugin, previewPackage, installPackage, removePackage,
+  } = governance;
   const [executionMode, setExecutionMode] = useState<ExecutionMode>('workflow');
   const [goal, setGoal] = useState('分析这个项目并给出重构建议');
   const [projectPath, setProjectPath] = useState(defaultProjectPath);
@@ -257,29 +284,6 @@ export function WorkspaceApp() {
   const [coachAnswer, setCoachAnswer] = useState('');
   const [coachReply, setCoachReply] = useState<LearningChatResponse | null>(null);
   const [coachTurn, setCoachTurn] = useState(0);
-  const [llmTraces, setLlmTraces] = useState<LlmTrace[]>([]);
-  const [llmTraceAgent, setLlmTraceAgent] = useState('');
-  const [llmPrompts, setLlmPrompts] = useState<LlmPromptVersion[]>([]);
-  const [llmUsage, setLlmUsage] = useState<LlmUsageDashboard | null>(null);
-  const [llmAgentFilter, setLlmAgentFilter] = useState('');
-  const [mcpStatus, setMcpStatus] = useState<McpStatus | null>(null);
-  const [mcpServers, setMcpServers] = useState<McpServerConfig[]>([]);
-  const [mcpTools, setMcpTools] = useState<McpRegisteredTool[]>([]);
-  const [mcpLogs, setMcpLogs] = useState<McpToolCallLog[]>([]);
-  const [skillPlugins, setSkillPlugins] = useState<SkillPlugin[]>([]);
-  const [skills, setSkills] = useState<SkillRecord[]>([]);
-  const [skillApprovals, setSkillApprovals] = useState<SkillApproval[]>([]);
-  const [skillLogs, setSkillLogs] = useState<SkillExecutionLog[]>([]);
-  const [selectedSkillCode, setSelectedSkillCode] = useState('code.review');
-  const [marketplaceCatalog, setMarketplaceCatalog] = useState<MarketplaceCatalogItem[]>([]);
-  const [marketplaceInstalls, setMarketplaceInstalls] = useState<MarketplaceInstall[]>([]);
-  const [marketplacePreview, setMarketplacePreview] = useState<MarketplacePreview | null>(null);
-  const [lastMarketplaceInstall, setLastMarketplaceInstall] = useState<MarketplaceInstall | null>(null);
-  const [benchmarkRuns, setBenchmarkRuns] = useState<BenchmarkRun[]>([]);
-  const [selectedBenchmark, setSelectedBenchmark] = useState<BenchmarkRun | null>(null);
-  const [benchmarkType, setBenchmarkType] = useState<BenchmarkType>('mcp');
-  const [benchmarkRunning, setBenchmarkRunning] = useState(false);
-  const [benchmarkError, setBenchmarkError] = useState('');
   const [focusPickerOpen, setFocusPickerOpen] = useState(false);
   const [focusFiles, setFocusFiles] = useState<string[]>([]);
   const [focusLoading, setFocusLoading] = useState(false);
@@ -353,84 +357,22 @@ export function WorkspaceApp() {
     await removeMemoryCandidate(memoryId);
   }
 
-  async function refreshLlmTraces(agent = llmTraceAgent) {
-    setLlmTraces(await listLlmTraces(50, agent));
-  }
-
-  async function refreshSkills(skillCode = selectedSkillCode) {
-    const [plugins, nextSkills, approvals, logs] = await Promise.all([
-      listSkillPlugins(),
-      listSkills(),
-      listSkillApprovals(),
-      listSkillExecutionLogs(80, skillCode),
-    ]);
-    setSkillPlugins(plugins);
-    setSkills(nextSkills);
-    setSkillApprovals(approvals);
-    setSkillLogs(logs);
-    if (!selectedSkillCode && nextSkills[0]) setSelectedSkillCode(nextSkills[0].code);
-  }
-
   function handleNavigate(view: ViewKey) {
     setActiveView(view);
-    if (view === 'workflow' || view === 'skills' || view === 'marketplace') {
-      refreshSkills(selectedSkillCode).catch(() => undefined);
-    }
-    if (view === 'marketplace') {
-      refreshMarketplace().catch(() => undefined);
-    }
-  }
-
-  async function refreshMarketplace(packageType = '') {
-    const [catalog, installs] = await Promise.all([
-      listMarketplaceCatalog(),
-      listMarketplaceInstalls(80, packageType),
-    ]);
-    setMarketplaceCatalog(catalog);
-    setMarketplaceInstalls(installs);
-  }
-
-  async function refreshLlmGovernance(agent = llmAgentFilter) {
-    const [prompts, usage] = await Promise.all([listLlmPrompts(agent), getLlmUsage(500, agent)]);
-    setLlmPrompts(prompts);
-    setLlmUsage(usage);
-  }
-
-  async function refreshMcp(serverId = '', agentCode = 'workflow_runner') {
-    const [status, servers, tools, logs] = await Promise.all([
-      getMcpStatus(),
-      listMcpServers(),
-      listMcpRegisteredTools(serverId, agentCode),
-      listMcpToolCallLogs(100, serverId),
-    ]);
-    setMcpStatus(status);
-    setMcpServers(servers);
-    setMcpTools(tools);
-    setMcpLogs(logs);
-  }
-
-  async function refreshBenchmarks(nextType = benchmarkType) {
-    const runs = await listBenchmarks(50, nextType);
-    setBenchmarkRuns(runs);
-    if (!selectedBenchmark || selectedBenchmark.benchmark_type !== nextType) {
-      setSelectedBenchmark(runs[0] ? await getBenchmark(runs[0].run_id) : null);
-    }
+    if (view === 'workflow' || view === 'skills' || view === 'marketplace') refreshSkills(selectedSkillCode).catch(() => undefined);
+    if (view === 'marketplace') refreshMarketplace().catch(() => undefined);
   }
 
   async function handleSkillEnabled(skillCode: string, enabled: boolean) {
-    await setSkillEnabled(skillCode, enabled);
-    await refreshSkills(skillCode);
+    await setSkillStatus(skillCode, enabled);
   }
 
   async function handleSkillApproval(skillCode: string, agentCode: string, allowed: boolean, reason: string) {
-    await setSkillApproval({ skill_code: skillCode, agent_code: agentCode, allowed, reason });
-    await refreshSkills(skillCode);
+    await updateSkillApproval(skillCode, agentCode, allowed, reason);
   }
 
   async function handleExecuteSkill(skillCode: string, agentCode: string, input: Record<string, unknown>) {
-    const result = await executeSkill({ skill_code: skillCode, agent_code: agentCode, input, task_id: latestTaskId || undefined });
-    await refreshSkills(skillCode);
-    return result;
+    return runSkill({ skill_code: skillCode, agent_code: agentCode, input, task_id: latestTaskId || undefined });
   }
 
   function handleAddSkillToWorkflow(skill: SkillRecord) {
@@ -461,15 +403,10 @@ export function WorkspaceApp() {
   }
 
   async function handleApproveAndTestMarketplaceSkill(skillCode: string) {
-    const skill = skills.find((item) => item.code === skillCode) ?? (await listSkills()).find((item) => item.code === skillCode);
+    const skill = skills.find((item) => item.code === skillCode);
     if (!skill) throw new Error(`Skill not found: ${skillCode}`);
-    await setSkillApproval({
-      skill_code: skillCode,
-      agent_code: 'skill_console',
-      allowed: true,
-      reason: 'Approved from Marketplace install result.',
-    });
-    await executeSkill({
+    await updateSkillApproval(skillCode, 'skill_console', true, 'Approved from Marketplace install result.');
+    await runSkill({
       skill_code: skillCode,
       agent_code: 'skill_console',
       input: skill.default_input ?? {},
@@ -481,7 +418,7 @@ export function WorkspaceApp() {
   }
 
   async function handleCreateMarketplaceSkillWorkflow(skillCode: string) {
-    const skill = skills.find((item) => item.code === skillCode) ?? (await listSkills()).find((item) => item.code === skillCode);
+    const skill = skills.find((item) => item.code === skillCode);
     if (!skill) throw new Error(`Skill not found: ${skillCode}`);
     const id = `skill_${Date.now()}`;
     setNodes([
@@ -505,131 +442,33 @@ export function WorkspaceApp() {
   }
 
   async function handlePreviewMarketplace(sourceUrl: string) {
-    const preview = await previewMarketplacePackage(sourceUrl);
-    setMarketplacePreview(preview);
-    return preview;
+    return previewPackage(sourceUrl);
   }
 
   async function handleInstallMarketplace(sourceUrl: string) {
-    const install = await installMarketplacePackage(sourceUrl);
-    setLastMarketplaceInstall(install);
-    await refreshMarketplace();
-    await refreshSkills();
-    await refreshMcp();
+    const install = await installPackage(sourceUrl);
     await refreshWorkflows();
-    await refreshLlmGovernance();
     return install;
   }
 
   async function handleUninstallMarketplace(packageId: string) {
-    const uninstall = await uninstallMarketplacePackage(packageId);
-    setLastMarketplaceInstall(uninstall);
-    await refreshMarketplace();
-    await refreshSkills();
-    return uninstall;
+    return removePackage(packageId);
   }
 
   async function handleUninstallSkillPlugin(pluginId: string) {
-    const uninstall = await uninstallSkillPlugin(pluginId);
-    await refreshMarketplace();
-    await refreshSkills();
-    return uninstall;
+    return removeSkillPlugin(pluginId);
   }
 
   async function handleRunBenchmark(payload: { name: string; agent_code: string; iterations: number; cases: BenchmarkCase[] }) {
-    setBenchmarkRunning(true);
-    setBenchmarkError('');
-    try {
-      const run = await runBenchmark(benchmarkType, payload);
-      setSelectedBenchmark(run);
-      await refreshBenchmarks(benchmarkType);
-      await refreshMcp();
-      return run;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Benchmark failed';
-      setBenchmarkError(message);
-      throw error;
-    } finally {
-      setBenchmarkRunning(false);
-    }
+    return executeBenchmark(payload);
   }
 
   async function handleOpenBenchmark(runId: string) {
-    setBenchmarkError('');
-    setSelectedBenchmark(await getBenchmark(runId));
+    await openBenchmark(runId);
   }
 
   async function handleBenchmarkTypeChange(nextType: BenchmarkType) {
-    setBenchmarkType(nextType);
-    setBenchmarkError('');
-    setSelectedBenchmark(null);
-    await refreshBenchmarks(nextType);
-  }
-
-  async function handleSaveMcpServer(payload: {
-    server_id: string;
-    name: string;
-    transport: string;
-    command?: string;
-    args: string[];
-    env: Record<string, string>;
-    url?: string;
-    enabled: boolean;
-  }) {
-    await saveMcpServer(payload);
-    await refreshMcp(payload.server_id);
-  }
-
-  async function handleMcpServerEnabled(serverId: string, enabled: boolean) {
-    await setMcpServerEnabled(serverId, enabled);
-    await refreshMcp(serverId);
-  }
-
-  async function handleDiscoverMcpServer(serverId: string) {
-    await discoverMcpServer(serverId);
-    await refreshMcp(serverId);
-  }
-
-  async function handleMcpToolEnabled(serverId: string, toolName: string, enabled: boolean) {
-    await setMcpRegisteredToolEnabled(serverId, toolName, enabled);
-    await refreshMcp(serverId);
-  }
-
-  async function handleMcpApproval(agentCode: string, serverId: string, toolName: string, allowed: boolean, reason: string) {
-    await setMcpToolApproval({ agent_code: agentCode, server_id: serverId, tool_name: toolName, allowed, reason });
-    await refreshMcp(serverId, agentCode);
-  }
-
-  async function handleCallMcpTool(payload: { server_id?: string; tool_name: string; agent_code: string; arguments: Record<string, unknown> }) {
-    const result = await callMcpTool(payload);
-    await refreshMcp(payload.server_id ?? '');
-    return result;
-  }
-
-  async function activatePrompt(prompt: LlmPromptVersion) {
-    await setActiveLlmPrompt(prompt.agent, prompt.prompt_version);
-    await refreshLlmGovernance(llmAgentFilter);
-    await refreshLlmTraces(llmTraceAgent);
-  }
-
-  async function handleSavePrompt(payload: LlmPromptPayload) {
-    await saveLlmPrompt(payload);
-    await refreshLlmGovernance(llmAgentFilter);
-    await refreshLlmTraces(llmTraceAgent);
-  }
-
-  async function handlePromptAbTest(payload: {
-    agent: string;
-    prompt_a: string;
-    prompt_b: string;
-    system_prompt: string;
-    user_prompt: string;
-    fallback: string;
-  }) {
-    const result = await runLlmPromptAbTest(payload);
-    await refreshLlmGovernance(llmAgentFilter);
-    await refreshLlmTraces(llmTraceAgent);
-    return result;
+    await changeBenchmarkType(nextType);
   }
 
   function consumeTaskPayload(payload: AgentEvent | Record<string, unknown>) {
@@ -737,8 +576,7 @@ export function WorkspaceApp() {
   async function handleRunTask(event: FormEvent) {
     event.preventDefault();
     if (executionMode === 'workflow') {
-      const approvalsForRun = await listSkillApprovals();
-      setSkillApprovals(approvalsForRun);
+      const approvalsForRun = await loadSkillApprovals();
       const blockedSkills = nodes.filter((node) => {
         if (node.type !== 'skill') return false;
         const skillCode = String(node.config.skill_code ?? '');
@@ -1391,61 +1229,22 @@ export function WorkspaceApp() {
         ) : null}
 
         {activeView === 'reports' ? (
-          <section className="reports-page">
-            <div className="panel report-card markdown-card report-tab-card">
-              <PanelTitle icon={<FileText size={17} />} title="报告中心" />
-              <ReportTabs active={reportTab} onChange={setReportTab} />
-              {reportTab === 'final' ? <MarkdownView text={finalReport || '运行任务后，这里会显示格式化后的最终报告。'} /> : null}
-              {reportTab === 'mentor' ? <MarkdownView text={extractMentorView(finalReport)} /> : null}
-              {reportTab === 'mermaid' ? <MermaidDiagram source={mermaid || buildLocalMermaid(nodes, edges)} /> : null}
-              {reportTab === 'governance' ? (
-                <GovernanceView
-                  riskLevel={riskLevel}
-                  reviewRequired={reviewRequired}
-                  nextActions={nextActions}
-                  suggestions={suggestions}
-                  suggestionRecords={suggestionRecords}
-                />
-              ) : null}
-            </div>
-            <div className="panel report-card markdown-card">
-              <PanelTitle icon={<FileText size={17} />} title="最终报告" />
-              <MarkdownView text={finalReport || '运行当前画布后，这里会显示格式化后的最终报告。'} />
-            </div>
-            <div className="panel report-card mermaid-card">
-              <PanelTitle icon={<Workflow size={17} />} title="Mermaid 图" />
-              <MermaidDiagram source={mermaid || buildLocalMermaid(nodes, edges)} />
-            </div>
-            <div className="panel report-card suggestions-card">
-              <PanelTitle icon={<ShieldCheck size={17} />} title="优化建议" />
-              <ul className="suggestion-list">
-                {(suggestions.length
-                  ? suggestions
-                  : ['保存高频 Workflow 为模板', '给关键节点增加人工审核', '后续接入真实 MCP client 与向量数据库']
-                ).map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-              <div className="knowledge-summary">
-                <strong>project-memory</strong>
-                <p>{knowledgeDocs.length} documents saved</p>
-                <button
-                  className="secondary"
-                  onClick={() => {
-                    setChatMode('knowledge');
-                    setActiveView('chat');
-                    handleQueryKnowledge();
-                  }}
-                >
-                  打开追问知识库
-                </button>
-              </div>
-            </div>
-          </section>
+          <ReportsWorkspacePage
+            finalReport={finalReport}
+            mermaid={mermaid}
+            nodes={nodes}
+            edges={edges}
+            riskLevel={riskLevel}
+            reviewRequired={reviewRequired}
+            nextActions={nextActions}
+            suggestions={suggestions}
+            suggestionRecords={suggestionRecords}
+            knowledgeDocumentCount={knowledgeDocs.length}
+            onOpenKnowledge={() => { setChatMode('knowledge'); setActiveView('chat'); handleQueryKnowledge(); }}
+          />
         ) : null}
-
         {activeView === 'chat' ? (
-          <ChatPage
+          <ChatConsolePage
             chatInput={chatInput}
             chatMessages={chatMessages}
             chatMode={chatMode}
@@ -1472,48 +1271,40 @@ export function WorkspaceApp() {
         ) : null}
 
         {activeView === 'llm' ? (
-          <LlmGovernancePage
+          <LlmConsolePage
             prompts={llmPrompts}
             usage={llmUsage}
             traces={llmTraces}
             traceAgent={llmTraceAgent}
             agentFilter={llmAgentFilter}
-            onAgentFilterChange={(value) => {
-              setLlmAgentFilter(value);
-              refreshLlmGovernance(value).catch(() => undefined);
-            }}
-            onTraceAgentChange={(value) => {
-              setLlmTraceAgent(value);
-              refreshLlmTraces(value).catch(() => undefined);
-            }}
-            onActivatePrompt={activatePrompt}
-            onSavePrompt={handleSavePrompt}
-            onRunAbTest={handlePromptAbTest}
-            onRefresh={() => {
-              refreshLlmGovernance().catch(() => undefined);
-              refreshLlmTraces().catch(() => undefined);
-            }}
+            onAgentFilterChange={changeLlmAgent}
+            onTraceAgentChange={changeLlmTraceAgent}
+            onActivatePrompt={activateLlmPrompt}
+            onSavePrompt={savePrompt}
+            onRunAbTest={runPromptAbTest}
+            onRefresh={refreshLlm}
           />
         ) : null}
 
         {activeView === 'mcp' ? (
-          <McpManagementPage
+          <McpConsolePage
+            projectPath={projectPath}
             status={mcpStatus}
             servers={mcpServers}
             tools={mcpTools}
             logs={mcpLogs}
             onRefresh={refreshMcp}
-            onSaveServer={handleSaveMcpServer}
-            onServerEnabled={handleMcpServerEnabled}
-            onDiscover={handleDiscoverMcpServer}
-            onToolEnabled={handleMcpToolEnabled}
-            onApproveTool={handleMcpApproval}
-            onCallTool={handleCallMcpTool}
+            onSaveServer={saveServer}
+            onServerEnabled={setServerEnabled}
+            onDiscover={discoverServer}
+            onToolEnabled={setToolEnabled}
+            onApproveTool={setToolApproval}
+            onCallTool={invokeTool}
           />
         ) : null}
 
         {activeView === 'skills' ? (
-          <SkillsPage
+          <SkillsConsolePage
             plugins={skillPlugins}
             skills={skills}
             approvals={skillApprovals}
@@ -1534,7 +1325,7 @@ export function WorkspaceApp() {
         ) : null}
 
         {activeView === 'marketplace' ? (
-          <PluginMarketplacePage
+          <MarketplacePage
             catalog={marketplaceCatalog}
             installs={marketplaceInstalls}
             preview={marketplacePreview}
@@ -1550,7 +1341,7 @@ export function WorkspaceApp() {
         ) : null}
 
         {activeView === 'benchmark' ? (
-          <BenchmarkPage
+          <BenchmarkConsolePage
             benchmarkType={benchmarkType}
             runs={benchmarkRuns}
             selectedRun={selectedBenchmark}
@@ -1564,20 +1355,7 @@ export function WorkspaceApp() {
         ) : null}
 
         {activeView === 'history' ? (
-          <section className="page-grid history-page">
-            <div className="panel history-list-panel">
-              <PanelTitle icon={<History size={17} />} title="历史任务" action={<button className="icon-button" onClick={refreshTasks}><RefreshCw size={15} /></button>} />
-              <TaskList tasks={tasks} selectedTaskId={selectedTaskId} onOpen={openTask} />
-            </div>
-            <div className="panel timeline-large">
-              <PanelTitle icon={<Activity size={17} />} title="任务事件回放" />
-              <Timeline events={events} />
-            </div>
-            <div className="panel report-preview-panel">
-              <PanelTitle icon={<FileText size={17} />} title="报告预览" />
-              <MarkdownView text={finalReport || '选择历史任务后查看报告。'} />
-            </div>
-          </section>
+          <HistoryWorkspacePage tasks={tasks} selectedTaskId={selectedTaskId} events={events} finalReport={finalReport} onOpen={openTask} onRefresh={refreshTasks} />
         ) : null}
 
         </ActivePage>
@@ -1598,29 +1376,15 @@ export function WorkspaceApp() {
 }
 
 function ModeTabs({ executionMode, onChange }: { executionMode: ExecutionMode; onChange: (mode: ExecutionMode) => void }) {
-  return (
-    <div className="mode-tabs">
-      {modeItems.map((item) => {
-        const Icon = item.icon;
-        return (
-          <button key={item.mode} className={executionMode === item.mode ? 'active' : ''} onClick={() => onChange(item.mode)}>
-            <Icon size={16} />
-            {item.label}
-          </button>
-        );
-      })}
-    </div>
-  );
+  return <div className="mode-tabs">{modeItems.map((item) => {
+    const Icon = item.icon;
+    return <button key={item.mode} type="button" className={executionMode === item.mode ? 'active' : ''} onClick={() => onChange(item.mode)}><Icon size={16} />{item.label}</button>;
+  })}</div>;
 }
 
 function ModeHint({ executionMode }: { executionMode: ExecutionMode }) {
-  const help = modeHelp[executionMode];
-  return (
-    <div className="mode-hint">
-      <strong>{help.title}</strong>
-      <p>{help.description}</p>
-    </div>
-  );
+  const hint = modeHelp[executionMode];
+  return <div className="mode-hint"><strong>{hint.title}</strong><p>{hint.description}</p></div>;
 }
 
 function AnalysisGuide({ onApply }: { onApply: (mode: ExecutionMode, prompt: string) => void }) {
@@ -3124,1676 +2888,6 @@ function summarizeMcpLogOutput(log: McpToolCallLog) {
     if (data.structuredContent) return summarizeValue(data.structuredContent);
   }
   return summarizeValue(log.output) || '无输出';
-}
-
-function PluginMarketplacePage({
-  catalog,
-  installs,
-  preview,
-  lastInstall,
-  onRefresh,
-  onPreview,
-  onInstall,
-  onUninstall,
-  onOpenSkill,
-  onApproveAndTestSkill,
-  onCreateSkillWorkflow,
-}: {
-  catalog: MarketplaceCatalogItem[];
-  installs: MarketplaceInstall[];
-  preview: MarketplacePreview | null;
-  lastInstall: MarketplaceInstall | null;
-  onRefresh: () => Promise<void>;
-  onPreview: (sourceUrl: string) => Promise<MarketplacePreview>;
-  onInstall: (sourceUrl: string) => Promise<MarketplaceInstall>;
-  onUninstall: (packageId: string) => Promise<MarketplaceInstall>;
-  onOpenSkill: (skillCode: string) => void;
-  onApproveAndTestSkill: (skillCode: string) => Promise<void>;
-  onCreateSkillWorkflow: (skillCode: string) => Promise<void>;
-}) {
-  const [sourceUrl, setSourceUrl] = useState('builtin://security-governance-skill-pack');
-  const [packageType, setPackageType] = useState('all');
-  const [message, setMessage] = useState('');
-  const filteredCatalog = packageType === 'all' ? catalog : catalog.filter((item) => item.package_type === packageType);
-  const packageTypes = ['all', 'skill_pack', 'rag_pack', 'mcp_pack', 'benchmark_pack', 'workflow_pack', 'prompt_pack'];
-  const latestInstallByPackage = new Map<string, MarketplaceInstall>();
-  for (const install of installs) {
-    if (!latestInstallByPackage.has(install.package_id)) latestInstallByPackage.set(install.package_id, install);
-  }
-  const installedPackages = Array.from(latestInstallByPackage.values());
-  const isInstalled = (packageId: string) => latestInstallByPackage.get(packageId)?.status === 'installed';
-  const installResultSkills = lastInstall ? marketplaceInstalledSkillCodes(lastInstall) : [];
-  const installCounts = packageTypes.slice(1).map((type) => ({
-    type,
-    count: installedPackages.filter((item) => item.package_type === type && item.status === 'installed').length,
-  }));
-
-  async function runAction(label: string, action: () => Promise<unknown>) {
-    setMessage('');
-    try {
-      await action();
-      setMessage(`${label} completed.`);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : `${label} failed`);
-    }
-  }
-
-  return (
-    <section className="page-grid marketplace-page">
-      <div className="panel marketplace-source-panel">
-        <PanelTitle icon={<Puzzle size={17} />} title="Plugin Marketplace" action={<button className="icon-button" onClick={onRefresh}><RefreshCw size={15} /></button>} />
-        <div className="marketplace-kpis">
-          <KpiCard label="catalog" value={String(catalog.length)} />
-          <KpiCard label="installed" value={String(Array.from(latestInstallByPackage.values()).filter((item) => item.status === 'installed').length)} />
-          <KpiCard label="failed" value={String(Array.from(latestInstallByPackage.values()).filter((item) => item.status === 'failed').length)} />
-        </div>
-        <form className="marketplace-form">
-          <label>
-            GitHub / URL / local path
-            <input value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} />
-            <FieldHelp>支持 builtin://package-id、GitHub 仓库 URL、zip/json/SKILL.md URL、本地目录、本地 plugin.json。没有 plugin.json 但包含 SKILL.md 时，会自动转换成声明式 Skill 插件。</FieldHelp>
-          </label>
-          <div className="marketplace-actions">
-            <button type="button" className="secondary" onClick={() => runAction('Preview', () => onPreview(sourceUrl))}>预览插件</button>
-            <button type="button" className="primary" onClick={() => runAction('Install', () => onInstall(sourceUrl))}>安装插件包</button>
-          </div>
-        </form>
-        {message ? <p className="marketplace-message">{message}</p> : null}
-        <div className="marketplace-type-row">
-          {installCounts.map((item) => <KpiCard key={item.type} label={marketplaceTypeLabel(item.type)} value={String(item.count)} />)}
-        </div>
-      </div>
-
-        {lastInstall ? (
-          <div className="panel marketplace-result-panel">
-            <PanelTitle icon={<Check size={17} />} title="最近安装结果" />
-            <div className={`marketplace-install-result ${lastInstall.status}`}>
-              <strong>{lastInstall.name}</strong>
-              <span>{lastInstall.package_type} / {lastInstall.status} / {marketplaceResourceCount(lastInstall)} resources</span>
-              {lastInstall.status === 'installed' && installResultSkills.length ? (
-                <div className="marketplace-skill-actions">
-                  <p>已安装 {installResultSkills.length} 个 Skill</p>
-                  {installResultSkills.map((skillCode) => (
-                    <article key={skillCode}>
-                      <span>{marketplaceSkillName(lastInstall, skillCode)}</span>
-                      <code>{skillCode}</code>
-                      <div className="marketplace-actions">
-                        <button type="button" className="secondary" onClick={() => onOpenSkill(skillCode)}>去 Skills 查看</button>
-                        <button type="button" className="secondary" onClick={() => runAction('Approve and test', () => onApproveAndTestSkill(skillCode))}>审批手动测试</button>
-                        <button type="button" className="primary" onClick={() => runAction('Create Workflow', () => onCreateSkillWorkflow(skillCode))}>添加到 Workflow</button>
-                      </div>
-                      <small>严格模式：审批手动测试只会放行 skill_console；添加到 Workflow 只创建节点，不会自动放行。Workflow 运行前必须手动审批 workflow_runner。</small>
-                    </article>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          </div>
-        ) : null}
-
-      <div className="panel marketplace-catalog-panel">
-        <PanelTitle icon={<Puzzle size={17} />} title="资源包目录" />
-        <div className="marketplace-tabs">
-          {packageTypes.map((type) => (
-            <button key={type} className={packageType === type ? 'active' : ''} onClick={() => setPackageType(type)}>
-              {marketplaceTypeLabel(type)}
-            </button>
-          ))}
-        </div>
-        <div className="marketplace-card-list">
-          {filteredCatalog.map((item) => (
-            <article key={item.package_id} className="marketplace-card">
-              <div>
-                <strong>{item.name}</strong>
-                <span>{item.package_id} / {item.version}</span>
-              </div>
-              <p>{item.description}</p>
-              <div className="skill-tags">
-                <span>{marketplaceTypeLabel(item.package_type)}</span>
-                {isInstalled(item.package_id) ? <span className="installed">installed</span> : <span>not installed</span>}
-                {item.permissions.map((permission) => <span key={permission}>{permission}</span>)}
-              </div>
-              <div className="marketplace-actions">
-                <button className="secondary" onClick={() => setSourceUrl(item.source_url)}>填入 URL</button>
-                <button className="secondary" onClick={() => runAction('Preview', () => onPreview(item.source_url))}>预览</button>
-                <button className="primary" onClick={() => runAction('Install', () => onInstall(item.source_url))}>
-                  {isInstalled(item.package_id) ? '重新安装' : '安装'}
-                </button>
-                <button className="secondary danger" disabled={!isInstalled(item.package_id)} onClick={() => runAction('Uninstall', () => onUninstall(item.package_id))}>
-                  卸载
-                </button>
-              </div>
-            </article>
-          ))}
-          {!filteredCatalog.length ? <p className="empty-text">暂无该类型资源包。</p> : null}
-        </div>
-      </div>
-
-      <div className="panel marketplace-preview-panel">
-        <PanelTitle icon={<FileText size={17} />} title="预览 / 权限" />
-        {preview ? (
-          <div className="marketplace-preview">
-            <div className="marketplace-summary-grid">
-              {Object.entries(preview.summary).map(([key, value]) => (
-                <KpiCard key={key} label={key} value={Array.isArray(value) ? String(value.length) : String(value)} />
-              ))}
-            </div>
-            <details className="skill-json" open>
-              <summary>manifest / plugin.json / SKILL.md</summary>
-              <pre>{JSON.stringify(preview.manifest, null, 2)}</pre>
-            </details>
-          </div>
-        ) : (
-          <p className="empty-text">先选择资源包或输入 URL 进行预览。</p>
-        )}
-      </div>
-
-      <div className="panel marketplace-history-panel">
-        <PanelTitle icon={<History size={17} />} title="安装历史" />
-        <div className="marketplace-install-list">
-          {installs.map((install) => (
-            <article key={install.install_id} className={`marketplace-install ${install.status}`}>
-              <div>
-                <strong>{install.name}</strong>
-                <span>{install.package_type} / {install.version || '-'} / {install.installed_at}</span>
-              </div>
-              <p>{install.source_url}</p>
-              {install.error_message ? <p className="error-text">{install.error_message}</p> : null}
-              <details className="skill-json">
-                <summary>安装摘要</summary>
-                <pre>{JSON.stringify({ summary: install.summary, manifest: install.manifest }, null, 2)}</pre>
-              </details>
-            </article>
-          ))}
-          {!installs.length ? <p className="empty-text">暂无安装历史。</p> : null}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function marketplaceTypeLabel(type: string) {
-  const labels: Record<string, string> = {
-    all: 'All',
-    skill_pack: 'Skill',
-    rag_pack: 'RAG',
-    mcp_pack: 'MCP',
-    benchmark_pack: 'Benchmark',
-    workflow_pack: 'Workflow',
-    prompt_pack: 'Prompt',
-  };
-  return labels[type] ?? type;
-}
-
-function marketplaceInstalledSkillCodes(install: MarketplaceInstall) {
-  const summarySkills = install.summary?.installed_skills;
-  if (Array.isArray(summarySkills)) return summarySkills.map(String);
-  const manifestSkills = install.manifest?.skills;
-  if (Array.isArray(manifestSkills)) {
-    return manifestSkills
-      .map((skill) => (skill && typeof skill === 'object' ? String((skill as Record<string, unknown>).code ?? '') : ''))
-      .filter(Boolean);
-  }
-  return [];
-}
-
-function marketplaceSkillName(install: MarketplaceInstall, skillCode: string) {
-  const manifestSkills = install.manifest?.skills;
-  if (Array.isArray(manifestSkills)) {
-    const match = manifestSkills.find((skill) => skill && typeof skill === 'object' && String((skill as Record<string, unknown>).code ?? '') === skillCode);
-    if (match && typeof match === 'object') return String((match as Record<string, unknown>).name ?? skillCode);
-  }
-  return skillCode;
-}
-
-function marketplaceResourceCount(install: MarketplaceInstall) {
-  const keys = ['installed_skills', 'saved_notes', 'registered_servers', 'installed_workflows', 'installed_prompts', 'benchmark_cases'];
-  let total = 0;
-  for (const key of keys) {
-    const value = install.summary?.[key];
-    if (Array.isArray(value)) total += value.length;
-  }
-  if (total) return total;
-  return marketplaceInstalledSkillCodes(install).length;
-}
-
-function SkillsPage({
-  plugins,
-  skills,
-  approvals,
-  logs,
-  selectedSkillCode,
-  projectPath,
-  onSelectSkill,
-  onRefresh,
-  onSkillEnabled,
-  onSkillApproval,
-  onExecuteSkill,
-  onAddToWorkflow,
-  onUninstallPlugin,
-}: {
-  plugins: SkillPlugin[];
-  skills: SkillRecord[];
-  approvals: SkillApproval[];
-  logs: SkillExecutionLog[];
-  selectedSkillCode: string;
-  projectPath: string;
-  onSelectSkill: (code: string) => void;
-  onRefresh: () => Promise<void>;
-  onSkillEnabled: (skillCode: string, enabled: boolean) => Promise<void>;
-  onSkillApproval: (skillCode: string, agentCode: string, allowed: boolean, reason: string) => Promise<void>;
-  onExecuteSkill: (skillCode: string, agentCode: string, input: Record<string, unknown>) => Promise<{ output: Record<string, unknown>; log_id: string; status: string; latency_ms: number }>;
-  onAddToWorkflow: (skill: SkillRecord) => void;
-  onUninstallPlugin: (pluginId: string) => Promise<Record<string, unknown>>;
-}) {
-  const selectedSkill = skills.find((item) => item.code === selectedSkillCode) ?? skills[0] ?? null;
-  const [agentCode, setAgentCode] = useState('skill_console');
-  const [approvalReason, setApprovalReason] = useState('Approved from Skills console.');
-  const [inputText, setInputText] = useState('{}');
-  const [categoryFilter, setCategoryFilter] = useState('all');
-  const [message, setMessage] = useState('');
-  const [result, setResult] = useState<Record<string, unknown> | null>(null);
-  const [versions, setVersions] = useState<SkillVersionSnapshot[]>([]);
-  const [testResult, setTestResult] = useState<SkillTestResult | null>(null);
-  const categories = Array.from(new Set(skills.map((skill) => skill.category))).sort();
-  const filteredSkills = categoryFilter === 'all' ? skills : skills.filter((skill) => skill.category === categoryFilter);
-  const activeApproval = selectedSkill
-    ? approvals.find((item) => item.skill_code === selectedSkill.code && item.agent_code === agentCode)
-    : undefined;
-  const activePlugin = selectedSkill ? plugins.find((plugin) => plugin.plugin_id === selectedSkill.plugin_id) : null;
-  const selectedSkillApprovals = selectedSkill
-    ? approvals.filter((approval) => approval.skill_code === selectedSkill.code)
-    : [];
-
-  useEffect(() => {
-    if (!selectedSkill) return;
-    const nextInput = { ...(selectedSkill.default_input ?? {}) };
-    for (const key of ['project_path', 'root_path', 'repo_path']) {
-      if (nextInput[key] === '.' || !nextInput[key]) nextInput[key] = projectPath;
-    }
-    setInputText(JSON.stringify(nextInput, null, 2));
-    setResult(null);
-    setTestResult(null);
-    setMessage('');
-    listSkillVersions(selectedSkill.code).then(setVersions).catch(() => setVersions([]));
-  }, [selectedSkill?.code, projectPath]);
-
-  async function runAction(label: string, action: () => Promise<unknown>) {
-    setMessage('');
-    try {
-      await action();
-      setMessage(`${label} completed.`);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : `${label} failed`);
-    }
-  }
-
-  async function submitExecution(event: FormEvent) {
-    event.preventDefault();
-    if (!selectedSkill) return;
-    await runAction('Skill execution', async () => {
-      const response = await onExecuteSkill(selectedSkill.code, agentCode, parseJsonValue<Record<string, unknown>>(inputText, {}));
-      setResult(response.output);
-    });
-  }
-
-  async function submitSkillTests() {
-    if (!selectedSkill) return;
-    await runAction('Skill tests', async () => {
-      const response = await testSkill({ skill_code: selectedSkill.code, agent_code: agentCode });
-      setTestResult(response);
-    });
-  }
-
-  async function submitRollback(version: string) {
-    if (!selectedSkill) return;
-    await runAction('Skill rollback', async () => {
-      await rollbackSkillVersion(selectedSkill.code, version);
-      await onRefresh();
-      const nextVersions = await listSkillVersions(selectedSkill.code);
-      setVersions(nextVersions);
-    });
-  }
-
-  return (
-    <section className="page-grid skills-page">
-      <div className="panel skill-plugin-panel">
-        <PanelTitle icon={<Puzzle size={17} />} title="已安装插件" action={<button className="icon-button" onClick={onRefresh}><RefreshCw size={15} /></button>} />
-        <div className="skill-kpis">
-          <KpiCard label="plugins" value={String(plugins.length)} />
-          <KpiCard label="skills" value={String(skills.length)} />
-          <KpiCard label="enabled" value={String(skills.filter((skill) => skill.enabled).length)} />
-        </div>
-        <div className="skill-plugin-list">
-          {plugins.map((plugin) => (
-            <article key={plugin.plugin_id} className={activePlugin?.plugin_id === plugin.plugin_id ? 'active' : ''}>
-              <strong>{plugin.name}</strong>
-              <span>{plugin.plugin_id} / {plugin.version} / {plugin.source_type}</span>
-              <p>{plugin.description || 'No description.'}</p>
-              <div className="skill-actions">
-                <button
-                  className="secondary danger"
-                  disabled={plugin.source_type === 'builtin'}
-                  onClick={() => runAction('Plugin uninstall', () => onUninstallPlugin(plugin.plugin_id))}
-                >
-                  卸载插件
-                </button>
-              </div>
-            </article>
-          ))}
-          {!plugins.length ? <p className="empty-text">暂无已安装插件。</p> : null}
-        </div>
-      </div>
-
-      <div className="panel skill-list-panel">
-        <PanelTitle icon={<Puzzle size={17} />} title="Skill 列表" />
-        <div className="skill-toolbar">
-          <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}>
-            <option value="all">all categories</option>
-            {categories.map((category) => <option key={category} value={category}>{category}</option>)}
-          </select>
-          <button className="secondary" onClick={() => selectedSkill && onAddToWorkflow(selectedSkill)} disabled={!selectedSkill}>
-            添加到 Workflow
-          </button>
-        </div>
-        <div className="skill-list">
-          {filteredSkills.map((skill) => (
-            <button key={skill.code} className={selectedSkill?.code === skill.code ? 'active' : ''} onClick={() => onSelectSkill(skill.code)}>
-              <strong>{skill.name}</strong>
-              <span>{skill.code} / {skill.category} / {skill.execution_type}</span>
-              <span className="state-with-meta">
-                <EnabledState enabled={skill.enabled} label="Skill" />
-                <RiskBadge level={skill.risk_level} />
-                <span>{skill.plugin_id}</span>
-              </span>
-            </button>
-          ))}
-          {!filteredSkills.length ? <p className="empty-text">暂无 Skill。</p> : null}
-        </div>
-      </div>
-
-      <div className="panel skill-detail-panel">
-        <PanelTitle icon={<FileText size={17} />} title="插件详情" />
-        {selectedSkill ? (
-          <div className="skill-detail">
-            <div>
-              <h3>{selectedSkill.name}</h3>
-              <span>{selectedSkill.code}</span>
-            </div>
-            <p>{selectedSkill.description}</p>
-            <dl>
-              <dt>分类</dt>
-              <dd>{selectedSkill.category}</dd>
-              <dt>来源插件</dt>
-              <dd>{selectedSkill.plugin_id}</dd>
-              <dt>执行类型</dt>
-              <dd>{selectedSkill.execution_type}</dd>
-              <dt>版本</dt>
-              <dd>{selectedSkill.version}</dd>
-              <dt>风险</dt>
-              <dd><RiskBadge level={selectedSkill.risk_level} /></dd>
-              <dt>来源格式</dt>
-              <dd>{selectedSkill.source_format}</dd>
-              <dt>状态</dt>
-              <dd><EnabledState enabled={selectedSkill.enabled} label="Skill" /></dd>
-            </dl>
-            <div className="skill-tags">
-              {(selectedSkill.permission_levels ?? []).map((level) => <span key={`level-${level}`} className={`risk-tag ${level}`}>{level}</span>)}
-              {selectedSkill.permissions.map((permission) => <span key={permission}>{permission}</span>)}
-              {!selectedSkill.permissions.length ? <span>no permission</span> : null}
-            </div>
-            <div className="skill-actions">
-              <button className="secondary" onClick={() => runAction('Skill toggle', () => onSkillEnabled(selectedSkill.code, !selectedSkill.enabled))}>
-                {selectedSkill.enabled ? '停用 Skill' : '启用 Skill'}
-              </button>
-              <button className="secondary" onClick={() => onAddToWorkflow(selectedSkill)}>添加到 Workflow</button>
-            </div>
-            <details className="skill-json">
-              <summary>输入 / 输出 Schema</summary>
-              <pre>{JSON.stringify({ input_schema: selectedSkill.input_schema, output_schema: selectedSkill.output_schema }, null, 2)}</pre>
-            </details>
-            <details className="skill-json" open>
-              <summary>契约 / 依赖 / 测试用例</summary>
-              <pre>{JSON.stringify({
-                contract: selectedSkill.contract,
-                dependencies: selectedSkill.dependencies,
-                tests: selectedSkill.tests,
-                entrypoint: selectedSkill.entrypoint,
-              }, null, 2)}</pre>
-            </details>
-            <div className="skill-version-box">
-              <div className="skill-section-title">
-                <strong>Skill 版本快照</strong>
-                <span>{versions.length} snapshot(s)</span>
-              </div>
-              {versions.slice(0, 5).map((version) => (
-                <article key={`${version.skill_code}-${version.version}-${version.created_at}`}>
-                  <div>
-                    <strong>{version.version}</strong>
-                    <span>{version.created_at}</span>
-                  </div>
-                  <button className="secondary" onClick={() => submitRollback(version.version)}>回滚</button>
-                </article>
-              ))}
-              {!versions.length ? <p className="empty-text">暂无版本快照。</p> : null}
-            </div>
-          </div>
-        ) : (
-          <p className="empty-text">请选择一个 Skill。</p>
-        )}
-      </div>
-
-      <div className="panel skill-approval-panel">
-        <PanelTitle icon={<ShieldCheck size={17} />} title="权限审批" />
-        <div className="skill-form skill-approval-form">
-          <div className="skill-approval-guide">
-            <strong>权限怎么判断</strong>
-            <span>审批按 skill_code + agent_code 精确匹配，不是只要有一个通过就全部通过。</span>
-            <span>skill_console：只用于 Skills 页面手动测试调用。</span>
-            <span>workflow_runner：只用于 Workflow 自动执行。Workflow 运行 Skill 时必须审批这个身份。</span>
-          </div>
-          <label>
-            agent_code
-            <input value={agentCode} onChange={(event) => setAgentCode(event.target.value)} />
-            <FieldHelp>审批记录按 agent_code 隔离；Workflow 节点执行 Skill 时也会使用这个身份。</FieldHelp>
-          </label>
-          <label>
-            reason
-            <input value={approvalReason} onChange={(event) => setApprovalReason(event.target.value)} />
-          </label>
-          <div className="skill-actions">
-            <button className="secondary" disabled={!selectedSkill} onClick={() => selectedSkill && runAction('Skill approval', () => onSkillApproval(selectedSkill.code, agentCode, true, approvalReason))}>
-              审批通过
-            </button>
-            <button className="secondary" disabled={!selectedSkill} onClick={() => selectedSkill && runAction('Skill approval revoke', () => onSkillApproval(selectedSkill.code, agentCode, false, 'Revoked from Skills console.'))}>
-              撤销审批
-            </button>
-          </div>
-        </div>
-        <div className={`skill-approval-state ${activeApproval?.allowed ? 'approved' : 'pending'}`}>
-          {activeApproval?.allowed ? '当前 Agent 已审批' : '当前 Agent 未审批'}
-          {activeApproval?.reason ? <span>{activeApproval.reason}</span> : null}
-        </div>
-        {selectedSkill ? (
-          <div className="skill-current-approval-list">
-            <strong>当前 Skill 的审批身份</strong>
-            {(selectedSkillApprovals.length ? selectedSkillApprovals : [{ skill_code: selectedSkill.code, agent_code: 'workflow_runner', allowed: false, reason: null, created_at: '', updated_at: '' }]).map((approval) => (
-              <article key={`${approval.skill_code}-${approval.agent_code}`}>
-                <div>
-                  <span className={`mcp-approval-state ${approval.allowed ? 'approved' : 'pending'}`}>
-                    {approval.allowed ? '已审批' : '待审批'}
-                  </span>
-                  <code>{approval.agent_code}</code>
-                </div>
-                {approval.reason ? <small>{approval.reason}</small> : null}
-                <div className="skill-actions">
-                  <button
-                    className="secondary"
-                    onClick={() => {
-                      setAgentCode(approval.agent_code);
-                      runAction('Skill approval revoke', () => onSkillApproval(selectedSkill.code, approval.agent_code, false, `Revoked ${approval.agent_code} from Skills console.`));
-                    }}
-                  >
-                    撤销这个身份
-                  </button>
-                  {!approval.allowed ? (
-                    <button
-                      className="secondary"
-                      onClick={() => {
-                        setAgentCode(approval.agent_code);
-                        runAction('Skill approval', () => onSkillApproval(selectedSkill.code, approval.agent_code, true, `Approved ${approval.agent_code} from Skills console.`));
-                      }}
-                    >
-                      审批这个身份
-                    </button>
-                  ) : null}
-                </div>
-              </article>
-            ))}
-            {!selectedSkillApprovals.some((approval) => approval.agent_code === 'workflow_runner') ? (
-              <button
-                className="secondary"
-                onClick={() => {
-                  setAgentCode('workflow_runner');
-                  runAction('Skill approval', () => onSkillApproval(selectedSkill.code, 'workflow_runner', true, 'Approved workflow_runner from Skills console.'));
-                }}
-              >
-                审批 workflow_runner
-              </button>
-            ) : null}
-          </div>
-        ) : null}
-        <div className="skill-approval-list">
-          {approvals.slice(0, 8).map((approval) => (
-            <article key={`${approval.skill_code}-${approval.agent_code}`}>
-              <strong>{approval.skill_code}</strong>
-              <span>{approval.agent_code} / {approval.allowed ? 'allowed' : 'blocked'}</span>
-            </article>
-          ))}
-        </div>
-      </div>
-
-      <div className="panel skill-execute-panel">
-        <PanelTitle icon={<Play size={17} />} title="测试调用" />
-        <form className="skill-form" onSubmit={submitExecution}>
-          <label>
-            input JSON
-            <textarea value={inputText} onChange={(event) => setInputText(event.target.value)} />
-            <FieldHelp>这里是传给 Skill 的输入。项目类 Skill 会读取 project_path / root_path / repo_path。</FieldHelp>
-          </label>
-          <button className="primary" disabled={!selectedSkill || !selectedSkill.enabled} type="submit">
-            <Play size={16} />
-            测试调用 Skill
-          </button>
-          <button className="secondary" disabled={!selectedSkill || !selectedSkill.enabled} type="button" onClick={submitSkillTests}>
-            运行自带测试
-          </button>
-        </form>
-        <div className="skill-execute-output">
-          {message ? <p className="skill-message">{message}</p> : null}
-          {testResult ? (
-            <div className="skill-test-summary">
-              <strong>测试结果：{testResult.passed}/{testResult.total} passed</strong>
-              <pre>{JSON.stringify(testResult.results, null, 2)}</pre>
-            </div>
-          ) : null}
-          {result ? <pre className="skill-result">{JSON.stringify(result, null, 2)}</pre> : <p className="empty-text">暂无测试输出。</p>}
-        </div>
-      </div>
-
-      <div className="panel skill-log-panel">
-        <PanelTitle icon={<History size={17} />} title="执行日志" />
-        <div className="skill-log-list">
-          {logs.map((log) => (
-            <article key={log.log_id} className={`skill-log-item ${log.status}`}>
-              <div>
-                <strong>{log.skill_code}</strong>
-                <span>{log.status} / {log.latency_ms}ms / {log.created_at}</span>
-              </div>
-              {log.error_message ? <p>{log.error_message}</p> : <p>{summarizeValue(log.output)}</p>}
-              <details className="skill-json">
-                <summary>完整 JSON</summary>
-                <pre>{JSON.stringify(log, null, 2)}</pre>
-              </details>
-            </article>
-          ))}
-          {!logs.length ? <p className="empty-text">暂无 Skill 执行日志。</p> : null}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function McpManagementPage({
-  status,
-  servers,
-  tools,
-  logs,
-  onRefresh,
-  onSaveServer,
-  onServerEnabled,
-  onDiscover,
-  onToolEnabled,
-  onApproveTool,
-  onCallTool,
-}: {
-  status: McpStatus | null;
-  servers: McpServerConfig[];
-  tools: McpRegisteredTool[];
-  logs: McpToolCallLog[];
-  onRefresh: (serverId?: string) => Promise<void>;
-  onSaveServer: (payload: {
-    server_id: string;
-    name: string;
-    transport: string;
-    command?: string;
-    args: string[];
-    env: Record<string, string>;
-    url?: string;
-    enabled: boolean;
-  }) => Promise<void>;
-  onServerEnabled: (serverId: string, enabled: boolean) => Promise<void>;
-  onDiscover: (serverId: string) => Promise<void>;
-  onToolEnabled: (serverId: string, toolName: string, enabled: boolean) => Promise<void>;
-  onApproveTool: (agentCode: string, serverId: string, toolName: string, allowed: boolean, reason: string) => Promise<void>;
-  onCallTool: (payload: { server_id?: string; tool_name: string; agent_code: string; arguments: Record<string, unknown> }) => Promise<Record<string, unknown>>;
-}) {
-  const [selectedServerId, setSelectedServerId] = useState('real_filesystem');
-  const [selectedToolName, setSelectedToolName] = useState('read_text_file');
-  const [serverDraft, setServerDraft] = useState({
-    server_id: 'real_filesystem',
-    name: 'Real Filesystem MCP',
-    transport: 'stdio',
-    command: '.venv\\Scripts\\python.exe',
-    argsText: JSON.stringify(['scripts/launch_mcp_filesystem.py', defaultProjectPath], null, 2),
-    envText: '{}',
-    url: '',
-    enabled: true,
-  });
-  const [agentCode, setAgentCode] = useState('workflow_runner');
-  const [approvalReason, setApprovalReason] = useState('Approved from MCP console.');
-  const [callArgsText, setCallArgsText] = useState(defaultMcpCallArguments('read_text_file', 'real_filesystem'));
-  const [callResult, setCallResult] = useState<Record<string, unknown> | null>(null);
-  const [message, setMessage] = useState('');
-  const activeServerId = selectedServerId || servers[0]?.server_id || '';
-  const visibleTools = activeServerId ? tools.filter((tool) => tool.server_id === activeServerId) : tools;
-  const activeToolName = selectedToolName || visibleTools[0]?.name || '';
-
-  function loadServer(server: McpServerConfig) {
-    const defaultTool = defaultMcpToolName(server.server_id);
-    setSelectedServerId(server.server_id);
-    setSelectedToolName(defaultTool);
-    setCallArgsText(defaultMcpCallArguments(defaultTool, server.server_id));
-    setServerDraft({
-      server_id: server.server_id,
-      name: server.name,
-      transport: server.transport,
-      command: server.command ?? '',
-      argsText: JSON.stringify(server.args ?? [], null, 2),
-      envText: JSON.stringify(server.env ?? {}, null, 2),
-      url: server.url ?? '',
-      enabled: server.enabled,
-    });
-    setMessage(`已载入 ${server.server_id}`);
-  }
-
-  async function submitServer(event: FormEvent) {
-    event.preventDefault();
-    setMessage('');
-    try {
-      await onSaveServer({
-        server_id: serverDraft.server_id.trim(),
-        name: serverDraft.name.trim(),
-        transport: serverDraft.transport,
-        command: serverDraft.command.trim(),
-        args: parseJsonValue<string[]>(serverDraft.argsText, []),
-        env: parseJsonValue<Record<string, string>>(serverDraft.envText, {}),
-        url: serverDraft.url.trim(),
-        enabled: serverDraft.enabled,
-      });
-      setSelectedServerId(serverDraft.server_id.trim());
-      setMessage('MCP Server 已保存。');
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'MCP Server 保存失败');
-    }
-  }
-
-  async function runAction(label: string, action: () => Promise<unknown>) {
-    setMessage('');
-    try {
-      await action();
-      setMessage(`${label} 已完成。`);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : `${label} 失败`);
-    }
-  }
-
-  async function submitCall(event: FormEvent) {
-    event.preventDefault();
-    await runAction('工具调用', async () => {
-      const result = await onCallTool({
-        server_id: activeServerId || undefined,
-        tool_name: activeToolName,
-        agent_code: agentCode,
-        arguments: parseJsonValue<Record<string, unknown>>(callArgsText, {}),
-      });
-      setCallResult(result);
-    });
-  }
-
-  return (
-    <section className="page-grid mcp-page">
-      <div className="panel mcp-server-panel">
-        <PanelTitle icon={<Wrench size={17} />} title="MCP Server" action={<button className="icon-button" onClick={() => onRefresh(activeServerId)}><RefreshCw size={15} /></button>} />
-        <div className="mcp-status-row">
-          <KpiCard label="provider" value={status?.provider ?? 'local'} />
-          <KpiCard label="servers" value={String(status?.server_count ?? servers.length)} />
-          <KpiCard label="tools" value={String(status?.tool_count ?? tools.length)} />
-        </div>
-        <form className="mcp-form" onSubmit={submitServer}>
-          <label>
-            server_id
-            <input value={serverDraft.server_id} onChange={(event) => setServerDraft({ ...serverDraft, server_id: event.target.value })} />
-            <FieldHelp>Workflow 节点里的 server_id 要和这里一致。</FieldHelp>
-          </label>
-          <label>
-            name
-            <input value={serverDraft.name} onChange={(event) => setServerDraft({ ...serverDraft, name: event.target.value })} />
-          </label>
-          <label>
-            transport
-            <select value={serverDraft.transport} onChange={(event) => setServerDraft({ ...serverDraft, transport: event.target.value })}>
-              <option value="stdio">stdio</option>
-            </select>
-            <FieldHelp>当前阶段支持 stdio MCP server。</FieldHelp>
-          </label>
-          <label>
-            command
-            <input value={serverDraft.command} onChange={(event) => setServerDraft({ ...serverDraft, command: event.target.value })} placeholder="npx / python / uvx" />
-          </label>
-          <label>
-            args JSON
-            <textarea value={serverDraft.argsText} onChange={(event) => setServerDraft({ ...serverDraft, argsText: event.target.value })} />
-          </label>
-          <label>
-            env JSON
-            <textarea value={serverDraft.envText} onChange={(event) => setServerDraft({ ...serverDraft, envText: event.target.value })} />
-          </label>
-          <label className="toggle-row">
-            <input type="checkbox" checked={serverDraft.enabled} onChange={(event) => setServerDraft({ ...serverDraft, enabled: event.target.checked })} />
-            保存后启用
-          </label>
-          <button className="primary" type="submit">保存 Server</button>
-        </form>
-        <div className="mcp-server-list">
-          {servers.map((server) => (
-            <button key={server.server_id} className={activeServerId === server.server_id ? 'active' : ''} onClick={() => loadServer(server)}>
-              <strong>{server.name}</strong>
-              <span className="state-with-meta">
-                <span>{server.server_id} / {server.status}</span>
-                <EnabledState enabled={server.enabled} label="Server" />
-              </span>
-            </button>
-          ))}
-          {!servers.length ? <p className="empty-text">暂无 MCP server 配置。</p> : null}
-        </div>
-      </div>
-
-      <div className="panel mcp-tool-panel">
-        <PanelTitle icon={<Wrench size={17} />} title="Tool 注册与审批" />
-        <div className="mcp-toolbar">
-          <select value={activeServerId} onChange={(event) => {
-            const defaultTool = defaultMcpToolName(event.target.value);
-            setSelectedServerId(event.target.value);
-            setSelectedToolName(defaultTool);
-            setCallArgsText(defaultMcpCallArguments(defaultTool, event.target.value));
-          }}>
-            <option value="">all servers</option>
-            {servers.map((server) => <option key={server.server_id} value={server.server_id}>{server.server_id}</option>)}
-          </select>
-          <button className="secondary" disabled={!activeServerId} onClick={() => runAction('Discover', () => onDiscover(activeServerId))}>Discover</button>
-          <button className="secondary" disabled={!activeServerId} onClick={() => runAction('启用 Server', () => onServerEnabled(activeServerId, true))}>启用</button>
-          <button className="secondary" disabled={!activeServerId} onClick={() => runAction('停用 Server', () => onServerEnabled(activeServerId, false))}>停用</button>
-        </div>
-        <div className="mcp-tool-list">
-          {visibleTools.map((tool) => {
-            const approvalText = tool.approval_allowed ? '审批已通过' : tool.approval_recorded ? '审批已撤销' : '未审批';
-            const approvalClass = tool.approval_allowed ? 'approved' : tool.approval_recorded ? 'revoked' : 'pending';
-            return (
-              <article key={tool.tool_id} className={`mcp-tool-card ${activeToolName === tool.name ? 'active' : ''}`}>
-                <button onClick={() => {
-                  setSelectedServerId(tool.server_id);
-                  setSelectedToolName(tool.name);
-                  setCallArgsText(defaultMcpCallArguments(tool.name, tool.server_id));
-                }}>
-                  <strong>{tool.name}</strong>
-                  <span className="state-with-meta">
-                    <span>{tool.server_id} / {tool.status}</span>
-                    <EnabledState enabled={tool.enabled} label="Tool" />
-                  </span>
-                  <span className={`mcp-approval-state ${approvalClass}`}>
-                    {approvalText}
-                    {tool.approval_agent_code ? ` · ${tool.approval_agent_code}` : ''}
-                  </span>
-                </button>
-                <p>{tool.description || 'No description'}</p>
-                {tool.approval_reason ? <p className="mcp-approval-reason">{tool.approval_reason}</p> : null}
-                <div>
-                  <button className="secondary" onClick={() => runAction('工具启停', () => onToolEnabled(tool.server_id, tool.name, !tool.enabled))}>
-                    {tool.enabled ? '停用工具' : '启用工具'}
-                  </button>
-                  <button className="secondary" onClick={() => runAction(tool.approval_allowed ? '重新审批' : '审批通过', () => onApproveTool(agentCode, tool.server_id, tool.name, true, approvalReason))}>
-                    {tool.approval_allowed ? '重新审批' : '审批通过'}
-                  </button>
-                  <button className="secondary" disabled={!tool.approval_allowed && tool.approval_recorded} onClick={() => runAction('撤销审批', () => onApproveTool(agentCode, tool.server_id, tool.name, false, approvalReason.toLowerCase().includes('approved') ? 'Revoked from MCP console.' : approvalReason))}>
-                    {tool.approval_allowed ? '撤销审批' : '已撤销'}
-                  </button>
-                </div>
-              </article>
-            );
-          })}
-          {!visibleTools.length ? <p className="empty-text">暂无已注册工具。先保存并 Discover MCP server。</p> : null}
-        </div>
-      </div>
-
-      <div className="panel mcp-call-panel">
-        <PanelTitle icon={<Activity size={17} />} title="调用与日志" />
-        <form className="mcp-form" onSubmit={submitCall}>
-          <label>
-            agent_code
-            <input value={agentCode} onChange={(event) => setAgentCode(event.target.value)} />
-            <FieldHelp>审批时使用同一个 agent_code。</FieldHelp>
-          </label>
-          <label>
-            tool_name
-            <input value={activeToolName} onChange={(event) => setSelectedToolName(event.target.value)} />
-          </label>
-          <label>
-            arguments JSON
-            <textarea value={callArgsText} onChange={(event) => setCallArgsText(event.target.value)} />
-          </label>
-          <label>
-            approval reason
-            <input value={approvalReason} onChange={(event) => setApprovalReason(event.target.value)} />
-          </label>
-          <button className="primary" disabled={!activeToolName} type="submit">测试调用</button>
-        </form>
-        {message ? <p className="mcp-message">{message}</p> : null}
-        {callResult ? <pre className="mcp-result">{JSON.stringify(callResult, null, 2)}</pre> : null}
-        <div className="mcp-log-list">
-          {logs.map((log) => (
-            <article key={log.call_id} className={`mcp-log-item ${log.status}`}>
-              <div className="mcp-log-head">
-                <strong>{log.tool_name}</strong>
-                <span>{log.server_id || 'local'}</span>
-                <span className={`mcp-log-status ${log.status}`}>{log.status}</span>
-                <span>{log.latency_ms}ms</span>
-              </div>
-              <p className="mcp-log-brief">
-                <span>输入</span>
-                {summarizeMcpLogInput(log)}
-              </p>
-              <p className="mcp-log-brief">
-                <span>{log.status === 'failed' ? '错误' : '结果'}</span>
-                {summarizeMcpLogOutput(log)}
-              </p>
-              <details className="mcp-log-details">
-                <summary><span>查看完整 JSON</span></summary>
-                <pre>{JSON.stringify(log, null, 2)}</pre>
-              </details>
-            </article>
-          ))}
-          {!logs.length ? <p className="empty-text">暂无 MCP 调用日志。</p> : null}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function BenchmarkPage({
-  benchmarkType,
-  runs,
-  selectedRun,
-  running,
-  error,
-  onBenchmarkTypeChange,
-  onRun,
-  onOpen,
-  onRefresh,
-}: {
-  benchmarkType: BenchmarkType;
-  runs: BenchmarkRun[];
-  selectedRun: BenchmarkRun | null;
-  running: boolean;
-  error: string;
-  onBenchmarkTypeChange: (type: BenchmarkType) => Promise<void>;
-  onRun: (payload: { name: string; agent_code: string; iterations: number; cases: BenchmarkCase[] }) => Promise<BenchmarkRun>;
-  onOpen: (runId: string) => Promise<void>;
-  onRefresh: () => Promise<void>;
-}) {
-  const [name, setName] = useState(benchmarkName(benchmarkType));
-  const [agentCode, setAgentCode] = useState('benchmark_runner');
-  const [iterations, setIterations] = useState(3);
-  const [casesText, setCasesText] = useState(JSON.stringify(defaultBenchmarkCases(benchmarkType), null, 2));
-  const [message, setMessage] = useState('');
-  const [goldCases, setGoldCases] = useState<RagGoldCase[]>([]);
-  const [goldForm, setGoldForm] = useState({
-    case_id: '',
-    collection: 'default',
-    question: '',
-    expected_chunk_ids: '',
-    expected_paths: '',
-    expected_keywords: '',
-    enabled: true,
-  });
-  const summary = selectedRun?.summary ?? {};
-  const results = selectedRun?.results ?? [];
-  const failedResults = results.filter((item) => item.status !== 'completed');
-  const metricItems = benchmarkMetricItems(benchmarkType, summary);
-
-  useEffect(() => {
-    setName(benchmarkName(benchmarkType));
-    setCasesText(JSON.stringify(defaultBenchmarkCases(benchmarkType), null, 2));
-    setMessage('');
-    if (benchmarkType === 'rag') {
-      refreshGoldCases();
-    }
-  }, [benchmarkType]);
-
-  async function refreshGoldCases() {
-    setGoldCases(await listRagGoldCases('', true));
-  }
-
-  async function submitGoldCase(event: FormEvent) {
-    event.preventDefault();
-    const saved = await saveRagGoldCase({
-      case_id: goldForm.case_id,
-      collection: goldForm.collection || 'default',
-      question: goldForm.question,
-      expected_chunk_ids: splitLines(goldForm.expected_chunk_ids),
-      expected_paths: splitLines(goldForm.expected_paths),
-      expected_keywords: splitLines(goldForm.expected_keywords),
-      enabled: goldForm.enabled,
-      metadata: { limit: 5, source: 'ui_gold_set' },
-    });
-    setMessage(`Gold Set saved: ${saved.case_id}`);
-    setGoldForm({ case_id: '', collection: 'default', question: '', expected_chunk_ids: '', expected_paths: '', expected_keywords: '', enabled: true });
-    await refreshGoldCases();
-  }
-
-  async function removeGoldCase(caseId: string) {
-    await deleteRagGoldCase(caseId);
-    await refreshGoldCases();
-  }
-
-  function useGoldCasesInEditor() {
-    const cases = goldCases
-      .filter((item) => item.enabled)
-      .map((item) => ({
-        case_id: item.case_id,
-        tool_name: 'rag.query',
-        arguments: {
-          collection: item.collection,
-          question: item.question,
-          expected_chunk_ids: item.expected_chunk_ids,
-          expected_paths: item.expected_paths,
-          expected_keywords: item.expected_keywords,
-          limit: Number(item.metadata?.limit ?? 5),
-        },
-        enabled: item.enabled,
-      }));
-    setCasesText(JSON.stringify(cases, null, 2));
-  }
-
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    setMessage('');
-    const cases = parseJsonValue<BenchmarkCase[]>(casesText, []);
-    const run = await onRun({ name, agent_code: agentCode, iterations, cases });
-    setMessage(`Benchmark completed: ${run.run_id}`);
-  }
-
-  return (
-    <section className="page-grid benchmark-page">
-      <div className="panel benchmark-control">
-        <PanelTitle icon={<BarChart3 size={17} />} title="Benchmark Run" action={<button className="icon-button" onClick={onRefresh}><RefreshCw size={15} /></button>} />
-        <form className="benchmark-form" onSubmit={submit}>
-          <div className="benchmark-type-tabs">
-            {(['mcp', 'llm', 'rag', 'workflow', 'collaboration'] as BenchmarkType[]).map((type) => (
-              <button
-                key={type}
-                type="button"
-                className={benchmarkType === type ? 'active' : ''}
-                onClick={() => onBenchmarkTypeChange(type)}
-              >
-                {benchmarkTypeLabel(type)}
-              </button>
-            ))}
-          </div>
-          <label>
-            name
-            <input value={name} onChange={(event) => setName(event.target.value)} />
-            <FieldHelp>本次测试集运行名称，用于历史记录和复盘。</FieldHelp>
-          </label>
-          <label>
-            agent_code
-            <input value={agentCode} onChange={(event) => setAgentCode(event.target.value)} />
-            <FieldHelp>需要和 MCP 工具审批里的 agent_code 一致；默认 benchmark_runner。</FieldHelp>
-          </label>
-          <label>
-            iterations
-            <input type="number" min={1} max={20} value={iterations} onChange={(event) => setIterations(Number(event.target.value))} />
-            <FieldHelp>每条 case 重复执行次数，用来观察稳定性、平均延迟和 P95。</FieldHelp>
-          </label>
-          <label>
-            cases JSON
-            <textarea value={casesText} onChange={(event) => setCasesText(event.target.value)} />
-            <FieldHelp>固定输入的测试集。每条 case 包含 case_id、server_id、tool_name、arguments。</FieldHelp>
-          </label>
-          <button className="primary" disabled={running} type="submit">
-            {running ? <RefreshCw className="spin" size={17} /> : <Play size={17} />}
-            {running ? 'Running...' : `Run ${benchmarkTypeLabel(benchmarkType)} Benchmark`}
-          </button>
-          {message ? <p className="benchmark-message">{message}</p> : null}
-          {error ? <p className="error-text">{error}</p> : null}
-        </form>
-      </div>
-
-      <div className="panel benchmark-summary">
-        <PanelTitle icon={<Activity size={17} />} title="Metrics" />
-        <div className="benchmark-kpis">
-          {metricItems.map((item) => <KpiCard key={item.label} label={item.label} value={item.value} />)}
-        </div>
-        {summary.benchmark_focus ? <p className="benchmark-focus">{String(summary.benchmark_focus)}</p> : null}
-        <div className="benchmark-case-list">
-          {(summary.by_case ?? []).map((item) => (
-            <article key={item.case_id} className={`benchmark-case-card ${item.failed ? 'failed' : ''}`}>
-              <div>
-                <strong>{item.case_id}</strong>
-                <span>{item.server_id || 'local'} / {item.tool_name}</span>
-              </div>
-              <div className="benchmark-case-stats">
-                <span>{Math.round(item.success_rate * 100)}%</span>
-                <span>avg {item.avg_latency_ms}ms</span>
-                <span>p95 {item.p95_latency_ms}ms</span>
-                <span>fail {item.failed}</span>
-              </div>
-            </article>
-          ))}
-          {!summary.by_case?.length ? <p className="empty-text">运行 Benchmark 后显示每条 case 的稳定性和耗时。</p> : null}
-        </div>
-      </div>
-
-      <div className="panel benchmark-history">
-        <PanelTitle icon={<History size={17} />} title="History" />
-        <div className="benchmark-run-list">
-          {runs.map((run) => (
-            <button key={run.run_id} className={selectedRun?.run_id === run.run_id ? 'active' : ''} onClick={() => onOpen(run.run_id)}>
-              <strong>{run.name}</strong>
-              <span>{run.status} / {run.summary?.total ?? 0} calls / {run.started_at}</span>
-              <span>success {Math.round(Number(run.summary?.success_rate ?? 0) * 100)}% / p95 {run.summary?.p95_latency_ms ?? 0}ms</span>
-            </button>
-          ))}
-          {!runs.length ? <p className="empty-text">暂无 Benchmark 历史。</p> : null}
-        </div>
-      </div>
-
-      <div className="panel benchmark-results">
-        <PanelTitle
-          icon={<FileText size={17} />}
-          title="Result Details"
-          action={<span className="small-muted">{selectedRun?.run_id ?? 'no run selected'}</span>}
-        />
-        <div className="benchmark-result-grid">
-          {results.map((item) => (
-            <article key={`${item.case_id}-${item.iteration}-${item.id ?? item.created_at}`} className={`benchmark-result-item ${item.status}`}>
-              <div className="benchmark-result-head">
-                <strong>{item.case_id}</strong>
-                <span>{item.iteration}</span>
-                <span>{item.status}</span>
-                <span>{item.latency_ms}ms</span>
-              </div>
-              {item.error_message ? <p className="benchmark-error">{firstLine(item.error_message)}</p> : null}
-              <details className="mcp-log-details">
-                <summary><span>JSON</span></summary>
-                <pre>{JSON.stringify(item, null, 2)}</pre>
-              </details>
-            </article>
-          ))}
-          {!results.length ? <p className="empty-text">选择历史或运行新的 Benchmark 后显示逐次执行明细。</p> : null}
-        </div>
-        {failedResults.length ? <p className="benchmark-message">失败 {failedResults.length} 条：优先检查 MCP server 是否启用、工具是否 discover、agent_code 是否审批。</p> : null}
-      </div>
-
-      {benchmarkType === 'rag' ? (
-        <div className="panel benchmark-gold">
-          <PanelTitle
-            icon={<Database size={17} />}
-            title="RAG Gold Set"
-            action={<button className="icon-button" onClick={refreshGoldCases}><RefreshCw size={15} /></button>}
-          />
-          <div className="rag-gold-layout">
-            <form className="rag-gold-form" onSubmit={submitGoldCase}>
-              <label>
-                case_id
-                <input value={goldForm.case_id} onChange={(event) => setGoldForm({ ...goldForm, case_id: event.target.value })} placeholder="auto when empty" />
-              </label>
-              <label>
-                collection
-                <input value={goldForm.collection} onChange={(event) => setGoldForm({ ...goldForm, collection: event.target.value })} />
-              </label>
-              <label>
-                question
-                <textarea value={goldForm.question} onChange={(event) => setGoldForm({ ...goldForm, question: event.target.value })} />
-              </label>
-              <label>
-                expected_chunk_ids
-                <textarea value={goldForm.expected_chunk_ids} onChange={(event) => setGoldForm({ ...goldForm, expected_chunk_ids: event.target.value })} placeholder="one chunk_id per line" />
-              </label>
-              <label>
-                expected_paths / expected_keywords
-                <div className="rag-gold-two">
-                  <textarea value={goldForm.expected_paths} onChange={(event) => setGoldForm({ ...goldForm, expected_paths: event.target.value })} placeholder="paths" />
-                  <textarea value={goldForm.expected_keywords} onChange={(event) => setGoldForm({ ...goldForm, expected_keywords: event.target.value })} placeholder="keywords" />
-                </div>
-              </label>
-              <label className="inline-check">
-                <input type="checkbox" checked={goldForm.enabled} onChange={(event) => setGoldForm({ ...goldForm, enabled: event.target.checked })} />
-                enabled
-              </label>
-              <button className="primary" type="submit"><Save size={16} /> Save Gold Case</button>
-              <button type="button" onClick={useGoldCasesInEditor}>Use Gold Set in cases JSON</button>
-            </form>
-            <div className="rag-gold-list">
-              {goldCases.map((item) => (
-                <article key={item.case_id} className="rag-gold-card">
-                  <div>
-                    <strong>{item.case_id}</strong>
-                    <span>{item.collection} / {item.enabled ? 'enabled' : 'disabled'}</span>
-                  </div>
-                  <p>{item.question}</p>
-                  <small>chunks {item.expected_chunk_ids.length} / paths {item.expected_paths.length} / keywords {item.expected_keywords.length}</small>
-                  <button className="danger" onClick={() => removeGoldCase(item.case_id)}><Trash2 size={15} /> Delete</button>
-                </article>
-              ))}
-              {!goldCases.length ? <p className="empty-text">No saved RAG Gold Set cases yet.</p> : null}
-            </div>
-          </div>
-        </div>
-      ) : null}
-    </section>
-  );
-}
-
-function LlmGovernancePage({
-  prompts,
-  usage,
-  traces,
-  traceAgent,
-  agentFilter,
-  onAgentFilterChange,
-  onTraceAgentChange,
-  onActivatePrompt,
-  onSavePrompt,
-  onRunAbTest,
-  onRefresh,
-}: {
-  prompts: LlmPromptVersion[];
-  usage: LlmUsageDashboard | null;
-  traces: LlmTrace[];
-  traceAgent: string;
-  agentFilter: string;
-  onAgentFilterChange: (value: string) => void;
-  onTraceAgentChange: (value: string) => void;
-  onActivatePrompt: (prompt: LlmPromptVersion) => void;
-  onSavePrompt: (payload: LlmPromptPayload) => Promise<void>;
-  onRunAbTest: (payload: {
-    agent: string;
-    prompt_a: string;
-    prompt_b: string;
-    system_prompt: string;
-    user_prompt: string;
-    fallback: string;
-  }) => Promise<LlmPromptAbTestResult>;
-  onRefresh: () => void;
-}) {
-  const agents = ['', ...Array.from(new Set(prompts.map((prompt) => prompt.agent))).sort()];
-  const [promptAgentFilter, setPromptAgentFilter] = useState('');
-  const [promptPage, setPromptPage] = useState(1);
-  const [editingPrompt, setEditingPrompt] = useState<LlmPromptVersion | null>(null);
-  const [promptDraft, setPromptDraft] = useState<LlmPromptPayload>({
-    agent: 'planner',
-    prompt_family: 'planner',
-    prompt_version: 'planner.custom.v1',
-    title: 'Custom planner prompt',
-    description: '',
-    system_suffix: '',
-    is_active: false,
-  });
-  const [abDraft, setAbDraft] = useState({
-    agent: 'planner',
-    prompt_a: 'planner.v1',
-    prompt_b: 'planner.v2',
-    system_prompt: '你是 Jaycode 的 Prompt A/B 测试执行器。请输出结构清晰、可验证、可行动的中文回答。',
-    user_prompt: '请分析一个 FastAPI + LangGraph 项目的风险，并给出治理建议。',
-    fallback: 'LLM 未配置或调用失败，返回 fallback。',
-  });
-  const [abResult, setAbResult] = useState<LlmPromptAbTestResult | null>(null);
-  const [promptBusy, setPromptBusy] = useState(false);
-  const [abBusy, setAbBusy] = useState(false);
-  const [promptMessage, setPromptMessage] = useState('');
-  const promptAgents = ['', ...Array.from(new Set(prompts.map((prompt) => prompt.agent))).sort()];
-  const filteredPrompts = promptAgentFilter ? prompts.filter((prompt) => prompt.agent === promptAgentFilter) : prompts;
-  const promptPageSize = 4;
-  const promptPageCount = Math.max(1, Math.ceil(filteredPrompts.length / promptPageSize));
-  const safePromptPage = Math.min(promptPage, promptPageCount);
-  const visiblePrompts = filteredPrompts.slice((safePromptPage - 1) * promptPageSize, safePromptPage * promptPageSize);
-  const agentPrompts = prompts.filter((prompt) => prompt.agent === abDraft.agent);
-  const total = usage?.total;
-  function loadPromptForEdit(prompt: LlmPromptVersion) {
-    setEditingPrompt(prompt);
-    setPromptDraft({
-      agent: prompt.agent,
-      prompt_family: prompt.prompt_family,
-      prompt_version: prompt.prompt_version,
-      title: prompt.title,
-      description: prompt.description ?? '',
-      system_suffix: prompt.system_suffix ?? '',
-      is_active: prompt.is_active,
-    });
-    setPromptMessage('已载入 Prompt，可编辑后保存。');
-  }
-  function resetPromptDraft() {
-    const agent = promptAgentFilter || agentFilter || 'planner';
-    const family = agent === 'project_analyzer' ? 'project_analyzer.architecture' : agent;
-    setEditingPrompt(null);
-    setPromptDraft({
-      agent,
-      prompt_family: family,
-      prompt_version: `${family}.custom.v1`,
-      title: `Custom ${agent} prompt`,
-      description: '',
-      system_suffix: '',
-      is_active: false,
-    });
-    setPromptMessage('');
-  }
-  async function submitPrompt(event: FormEvent) {
-    event.preventDefault();
-    setPromptBusy(true);
-    setPromptMessage('');
-    try {
-      await onSavePrompt(promptDraft);
-      setPromptMessage(editingPrompt ? 'Prompt 已更新。' : 'Prompt 已创建。');
-      setEditingPrompt(null);
-    } catch (error) {
-      setPromptMessage(error instanceof Error ? error.message : 'Prompt 保存失败');
-    } finally {
-      setPromptBusy(false);
-    }
-  }
-  async function submitAbTest(event: FormEvent) {
-    event.preventDefault();
-    setAbBusy(true);
-    setPromptMessage('');
-    try {
-      setAbResult(await onRunAbTest(abDraft));
-    } catch (error) {
-      setPromptMessage(error instanceof Error ? error.message : 'A/B Test 运行失败');
-    } finally {
-      setAbBusy(false);
-    }
-  }
-  return (
-    <section className="page-grid llm-page">
-      <div className="panel llm-console-panel">
-        <PanelTitle icon={<SlidersHorizontal size={17} />} title="LLM 控制台" action={<button className="icon-button" onClick={onRefresh}><RefreshCw size={15} /></button>} />
-        <div className="llm-console-body">
-          <div className="llm-filter">
-            <label>
-              <span>Agent</span>
-              <select value={agentFilter} onChange={(event) => onAgentFilterChange(event.target.value)}>
-                {agents.map((agent) => (
-                  <option key={agent || 'all'} value={agent}>{agent || 'all agents'}</option>
-                ))}
-              </select>
-            </label>
-            <FieldHelp>筛选后会影响 Token/Cost 看板和 LLM Trace 的统计范围。</FieldHelp>
-          </div>
-          <div className="llm-kpi-stack">
-            <KpiCard label="calls" value={String(total?.calls ?? 0)} />
-            <KpiCard label="tokens" value={formatNumber(total?.total_tokens ?? 0)} />
-            <KpiCard label="cost" value={`$${formatCost(total?.estimated_cost_usd ?? 0)}`} />
-            <KpiCard label="fallback" value={`${Math.round((total?.fallback_rate ?? 0) * 100)}%`} />
-          </div>
-          <div className="llm-note">
-            <strong>cost basis</strong>
-            <p>{usage?.cost_basis ?? '等待 LLM Trace 生成后显示统计。'}</p>
-          </div>
-        </div>
-      </div>
-
-      <div className="panel llm-dashboard">
-        <PanelTitle icon={<BarChart3 size={17} />} title="Token / Cost 看板" />
-        {usage ? (
-          <div className="usage-sections">
-            <UsageTable title="By Agent" items={usage.by_agent} />
-            <UsageTable title="By Model" items={usage.by_model} />
-            <UsageTable title="By Prompt" items={usage.by_prompt} />
-          </div>
-        ) : (
-          <p className="empty-text">暂无 usage 数据。</p>
-        )}
-      </div>
-
-      <div className="panel llm-trace-section">
-        <LlmTracePanel traces={traces} agent={traceAgent} onAgentChange={onTraceAgentChange} onRefresh={onRefresh} />
-      </div>
-
-      <div className="panel llm-prompts">
-        <PanelTitle icon={<SlidersHorizontal size={17} />} title="Prompt 版本管理" />
-        <div className="prompt-toolbar">
-          <label>
-            <span>Agent</span>
-            <select
-              value={promptAgentFilter}
-              onChange={(event) => {
-                setPromptAgentFilter(event.target.value);
-                setPromptPage(1);
-              }}
-            >
-              {promptAgents.map((agent) => (
-                <option key={agent || 'all'} value={agent}>{agent || 'all agents'}</option>
-              ))}
-            </select>
-          </label>
-          <div className="prompt-pagination">
-            <button className="secondary" disabled={safePromptPage <= 1} onClick={() => setPromptPage((page) => Math.max(1, page - 1))}>
-              Prev
-            </button>
-            <span>{safePromptPage} / {promptPageCount}</span>
-            <button className="secondary" disabled={safePromptPage >= promptPageCount} onClick={() => setPromptPage((page) => Math.min(promptPageCount, page + 1))}>
-              Next
-            </button>
-          </div>
-        </div>
-        <div className="prompt-list">
-          {visiblePrompts.length ? (
-            visiblePrompts.map((prompt) => (
-              <article key={`${prompt.agent}-${prompt.prompt_version}`} className={`prompt-card ${prompt.is_active ? 'active' : ''}`}>
-                <header>
-                  <div>
-                    <strong>{prompt.prompt_version}</strong>
-                    <span>{prompt.agent} / {prompt.prompt_family}</span>
-                  </div>
-                  <button className="secondary" disabled={prompt.is_active} onClick={() => onActivatePrompt(prompt)}>
-                    {prompt.is_active ? 'active' : '设为 active'}
-                  </button>
-                  <button className="secondary" onClick={() => loadPromptForEdit(prompt)}>
-                    编辑
-                  </button>
-                </header>
-                <p>{prompt.description || prompt.title}</p>
-                {prompt.system_suffix ? <pre>{prompt.system_suffix}</pre> : <small>baseline prompt uses the call-site default instruction.</small>}
-              </article>
-            ))
-          ) : (
-            <p className="empty-text">暂无 Prompt 版本。</p>
-          )}
-        </div>
-        <div className="prompt-lab">
-          <form className="prompt-editor" onSubmit={submitPrompt}>
-            <PanelTitle icon={<FileText size={17} />} title={editingPrompt ? '编辑 Prompt' : '新增 Prompt'} action={<button type="button" className="secondary" onClick={resetPromptDraft}>新建</button>} />
-            <div className="prompt-form-grid">
-              <label>
-                Agent
-                <input value={promptDraft.agent} onChange={(event) => setPromptDraft({ ...promptDraft, agent: event.target.value })} />
-                <FieldHelp>要绑定的 Agent，例如 planner、reporter、code_reviewer。</FieldHelp>
-              </label>
-              <label>
-                Family
-                <input value={promptDraft.prompt_family ?? ''} onChange={(event) => setPromptDraft({ ...promptDraft, prompt_family: event.target.value })} />
-                <FieldHelp>同一 family 下只能有一个 active 版本。</FieldHelp>
-              </label>
-              <label>
-                Version
-                <input value={promptDraft.prompt_version} onChange={(event) => setPromptDraft({ ...promptDraft, prompt_version: event.target.value })} />
-                <FieldHelp>建议使用 agent.family.custom.v1，保存相同版本会覆盖更新。</FieldHelp>
-              </label>
-              <label>
-                Title
-                <input value={promptDraft.title} onChange={(event) => setPromptDraft({ ...promptDraft, title: event.target.value })} />
-              </label>
-            </div>
-            <label>
-              Description
-              <input value={promptDraft.description ?? ''} onChange={(event) => setPromptDraft({ ...promptDraft, description: event.target.value })} />
-            </label>
-            <label>
-              System suffix
-              <textarea value={promptDraft.system_suffix ?? ''} onChange={(event) => setPromptDraft({ ...promptDraft, system_suffix: event.target.value })} />
-              <FieldHelp>这里会追加到该 Agent 原始 system prompt 后面，用于约束输出风格、证据、格式和治理要求。</FieldHelp>
-            </label>
-            <label className="toggle-row">
-              <input type="checkbox" checked={Boolean(promptDraft.is_active)} onChange={(event) => setPromptDraft({ ...promptDraft, is_active: event.target.checked })} />
-              保存后设为 active
-            </label>
-            <button className="primary" type="submit" disabled={promptBusy}>
-              {promptBusy ? '保存中...' : '保存 Prompt'}
-            </button>
-            {promptMessage ? <p className="prompt-message">{promptMessage}</p> : null}
-          </form>
-
-          <form className="prompt-abtest" onSubmit={submitAbTest}>
-            <PanelTitle icon={<Activity size={17} />} title="Prompt A/B Test" />
-            <div className="prompt-form-grid">
-              <label>
-                Agent
-                <select
-                  value={abDraft.agent}
-                  onChange={(event) => {
-                    const nextAgent = event.target.value;
-                    const nextPrompts = prompts.filter((prompt) => prompt.agent === nextAgent);
-                    setAbDraft({
-                      ...abDraft,
-                      agent: nextAgent,
-                      prompt_a: nextPrompts[0]?.prompt_version ?? '',
-                      prompt_b: nextPrompts[1]?.prompt_version ?? nextPrompts[0]?.prompt_version ?? '',
-                    });
-                  }}
-                >
-                  {promptAgents.filter(Boolean).map((agent) => (
-                    <option key={agent} value={agent}>{agent}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Prompt A
-                <select value={abDraft.prompt_a} onChange={(event) => setAbDraft({ ...abDraft, prompt_a: event.target.value })}>
-                  {agentPrompts.map((prompt) => <option key={prompt.prompt_version} value={prompt.prompt_version}>{prompt.prompt_version}</option>)}
-                </select>
-              </label>
-              <label>
-                Prompt B
-                <select value={abDraft.prompt_b} onChange={(event) => setAbDraft({ ...abDraft, prompt_b: event.target.value })}>
-                  {agentPrompts.map((prompt) => <option key={prompt.prompt_version} value={prompt.prompt_version}>{prompt.prompt_version}</option>)}
-                </select>
-              </label>
-            </div>
-            <label>
-              System prompt
-              <textarea value={abDraft.system_prompt} onChange={(event) => setAbDraft({ ...abDraft, system_prompt: event.target.value })} />
-            </label>
-            <label>
-              Test input
-              <textarea value={abDraft.user_prompt} onChange={(event) => setAbDraft({ ...abDraft, user_prompt: event.target.value })} />
-            </label>
-            <label>
-              Fallback
-              <input value={abDraft.fallback} onChange={(event) => setAbDraft({ ...abDraft, fallback: event.target.value })} />
-            </label>
-            <button className="primary" type="submit" disabled={abBusy || !abDraft.prompt_a || !abDraft.prompt_b}>
-              {abBusy ? '对比中...' : '运行 A/B Test'}
-            </button>
-            {abResult ? <PromptAbResult result={abResult} /> : null}
-          </form>
-        </div>
-      </div>
-
-      <div className="panel llm-recent">
-        <PanelTitle icon={<Activity size={17} />} title="最近 LLM Trace" />
-        <div className="recent-trace-list">
-          {traces.slice(0, 8).map((trace) => (
-            <div key={trace.trace_id} className="recent-trace-row">
-              <strong>{trace.agent}</strong>
-              <span>{trace.prompt_version}</span>
-              <span>{trace.model || 'fallback'}</span>
-              <em>{trace.fallback_used ? 'fallback' : 'llm'}</em>
-            </div>
-          ))}
-          {!traces.length ? <p className="empty-text">暂无 trace。</p> : null}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function KpiCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="kpi-card">
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
-  );
-}
-
-function PromptAbResult({ result }: { result: LlmPromptAbTestResult }) {
-  return (
-    <section className="ab-result">
-      <header>
-        <strong>Winner: {result.comparison.winner}</strong>
-        <span>{result.comparison.criteria.join(' / ')}</span>
-      </header>
-      <div className="ab-result-grid">
-        <PromptAbResultCard label="A" item={result.prompt_a} />
-        <PromptAbResultCard label="B" item={result.prompt_b} />
-      </div>
-    </section>
-  );
-}
-
-function PromptAbResultCard({ label, item }: { label: string; item: LlmPromptAbTestResult['prompt_a'] }) {
-  return (
-    <article className={`ab-result-card ${item.fallback_used ? 'fallback' : ''}`}>
-      <div>
-        <strong>{label}: {item.prompt_version}</strong>
-        <span>{item.fallback_used ? 'fallback' : item.model || 'llm'}</span>
-      </div>
-      <dl>
-        <dt>quality</dt>
-        <dd>{item.quality_score}</dd>
-        <dt>tokens</dt>
-        <dd>{item.total_tokens}</dd>
-        <dt>latency</dt>
-        <dd>{item.latency_ms}ms</dd>
-      </dl>
-      <pre>{item.text}</pre>
-      <small>{item.trace_id ? `trace: ${item.trace_id}` : 'trace unavailable'}</small>
-    </article>
-  );
-}
-
-function UsageTable({ title, items }: { title: string; items: LlmUsageDashboard['by_agent'] }) {
-  return (
-    <section className="usage-table-section">
-      <h3>{title}</h3>
-      <div className="usage-table">
-        <div className="usage-row header">
-          <span>name</span>
-          <span>calls</span>
-          <span>tokens</span>
-          <span>latency</span>
-          <span>fallback</span>
-          <span>cost</span>
-        </div>
-        {items.length ? (
-          items.map((item) => (
-            <div className="usage-row" key={`${title}-${item.name}`}>
-              <span>{item.name}</span>
-              <span>{item.calls}</span>
-              <span>{formatNumber(item.total_tokens)}</span>
-              <span>{item.avg_latency_ms}ms</span>
-              <span>{Math.round(item.fallback_rate * 100)}%</span>
-              <span>${formatCost(item.estimated_cost_usd)}</span>
-            </div>
-          ))
-        ) : (
-          <p className="empty-text">暂无数据。</p>
-        )}
-      </div>
-    </section>
-  );
-}
-
-function formatNumber(value: number) {
-  return new Intl.NumberFormat('en-US').format(value);
-}
-
-function formatCost(value: number) {
-  return value.toFixed(value > 0 && value < 0.01 ? 6 : 4);
-}
-
-function LlmTracePanel({
-  traces,
-  agent,
-  onAgentChange,
-  onRefresh,
-}: {
-  traces: LlmTrace[];
-  agent: string;
-  onAgentChange: (value: string) => void;
-  onRefresh: () => void;
-}) {
-  const agentOptions = [
-    '',
-    'planner',
-    'reporter',
-    'supervisor',
-    'project_analyzer',
-    'code_reviewer',
-    'file_reviewer',
-    'task_qa',
-    'learning_coach',
-  ];
-  return (
-    <div className="llm-trace-panel">
-      <PanelTitle
-        icon={<Activity size={17} />}
-        title="LLM Trace"
-        action={
-          <button className="icon-button" onClick={onRefresh} title="刷新 LLM 调用记录">
-            <RefreshCw size={15} />
-          </button>
-        }
-      />
-      <div className="trace-toolbar">
-        <label>
-          <span>Agent</span>
-          <select value={agent} onChange={(event) => onAgentChange(event.target.value)}>
-            {agentOptions.map((item) => (
-              <option key={item || 'all'} value={item}>
-                {item || 'all agents'}
-              </option>
-            ))}
-          </select>
-        </label>
-        <small>记录每次模型调用的来源、模型、prompt 版本、fallback、错误和耗时。</small>
-      </div>
-      <div className="trace-list">
-        {traces.length ? (
-          traces.map((trace) => <LlmTraceItem key={trace.trace_id} trace={trace} />)
-        ) : (
-          <p className="empty-text">暂无 LLM 调用记录。运行 Planner、Collab、代码审查、学习陪练或任务追问后会显示。</p>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function LlmTraceItem({ trace }: { trace: LlmTrace }) {
-  const tokenUsage = trace.token_usage && Object.keys(trace.token_usage).length ? JSON.stringify(trace.token_usage) : 'no token usage';
-  const inputPreview = trace.input ? JSON.stringify(trace.input, null, 2) : '';
-  return (
-    <details className={`trace-item ${trace.fallback_used ? 'fallback' : 'llm'}`}>
-      <summary>
-        <span className="trace-agent">{trace.agent}</span>
-        <span>{trace.model || 'no model'}</span>
-        <span>{trace.prompt_version}</span>
-        <span>{trace.latency_ms}ms</span>
-        <strong>{trace.fallback_used ? 'fallback' : 'llm'}</strong>
-      </summary>
-      <div className="trace-body">
-        <dl>
-          <dt>created_at</dt>
-          <dd>{trace.created_at}</dd>
-          <dt>trace_id</dt>
-          <dd>{trace.trace_id}</dd>
-          <dt>token_usage</dt>
-          <dd>{tokenUsage}</dd>
-          {trace.error_message ? (
-            <>
-              <dt>error</dt>
-              <dd>{trace.error_message}</dd>
-            </>
-          ) : null}
-        </dl>
-        <h4>input</h4>
-        <pre>{inputPreview}</pre>
-        <h4>output</h4>
-        <pre>{trace.output_text || ''}</pre>
-      </div>
-    </details>
-  );
 }
 
 function ChatPage({

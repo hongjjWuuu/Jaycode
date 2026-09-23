@@ -67,5 +67,5 @@ def test_markdown_local_links_resolve() -> None:
 
 
 def test_frontend_default_project_path_is_portable() -> None:
-    source = (ROOT / "web/src/App.tsx").read_text(encoding="utf-8")
+    source = (ROOT / "web/src/pages/WorkspaceApp.tsx").read_text(encoding="utf-8")
     assert "const defaultProjectPath = '.';" in source

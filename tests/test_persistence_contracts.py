@@ -11,7 +11,9 @@ from app.persistence.factory import PersistenceConfigurationError, get_persisten
 from app.persistence.rag_store import PgVectorRagStore
 
 
-def test_sqlite_bundle_exposes_every_declared_domain_and_contract_method() -> None:
+def test_sqlite_bundle_exposes_every_declared_domain_and_contract_method(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "jaycode_persistence_store", "sqlite")
+    monkeypatch.setattr(settings, "jaycode_rag_store", "sqlite")
     get_persistence_stores.cache_clear()
     stores = get_persistence_stores()
     assert stores.backend == "sqlite"
