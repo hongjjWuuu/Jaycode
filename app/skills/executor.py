@@ -5,7 +5,7 @@ from typing import Any
 from uuid import uuid4
 
 from app.core.config import settings
-from app.core.observability import record_domain_operation
+from app.core.observability import record_domain_operation, stable_error_code
 from app.core.security import execution_auth_context
 from app.harness.events import utc_now_iso
 from app.persistence.factory import get_persistence_stores
@@ -134,7 +134,7 @@ def execute_skill(
                 "created_at": utc_now_iso(),
             }
         )
-        record_domain_operation("skill", "execute", started, status="failed", error_code=type(exc).__name__)
+        record_domain_operation("skill", "execute", started, status="failed", error_code=stable_error_code(exc))
         raise
 
 # 给“声明式 Skill”用的

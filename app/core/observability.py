@@ -8,6 +8,35 @@ from collections import defaultdict
 from typing import Any
 
 
+_EXCEPTION_ERROR_CODES: tuple[tuple[type[BaseException], str], ...] = (
+    (PermissionError, "FORBIDDEN"),
+    (FileNotFoundError, "NOT_FOUND"),
+    (TimeoutError, "DEPENDENCY_TIMEOUT"),
+    (ValueError, "VALIDATION_FAILED"),
+    (ConnectionError, "DEPENDENCY_UNAVAILABLE"),
+)
+
+
+def stable_error_code(error: BaseException | str | None) -> str:
+    """Map operational failures to a bounded metric/log label.
+
+    Exception class names are implementation details and can create unbounded
+    Prometheus label sets. Callers may pass an already-stable upper-case code;
+    all other values are reduced to the public operational taxonomy.
+    """
+    if error is None:
+        return "none"
+    if isinstance(error, str):
+        candidate = error.strip()
+        if candidate and candidate.replace("_", "").isalnum() and candidate == candidate.upper():
+            return candidate
+        return "INTERNAL_ERROR"
+    for error_type, code in _EXCEPTION_ERROR_CODES:
+        if isinstance(error, error_type):
+            return code
+    return "INTERNAL_ERROR"
+
+
 class MetricsRegistry:
     """Small dependency-free Prometheus registry for local and production use."""
 
@@ -58,7 +87,12 @@ def record_domain_operation(
     error_code: str = "",
 ) -> None:
     """Record low-cardinality domain results without leaking request payloads."""
-    labels = {"domain": domain, "operation": operation, "status": status, "error_code": error_code or "none"}
+    labels = {
+        "domain": domain,
+        "operation": operation,
+        "status": status,
+        "error_code": stable_error_code(error_code or None),
+    }
     metrics.inc("jaycode_domain_operations_total", labels=labels)
     metrics.observe("jaycode_domain_operation", started, labels=labels)
 

@@ -36,4 +36,11 @@ describe('WorkflowPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '刷新' }));
     expect(onRefresh).toHaveBeenCalledOnce();
   });
+
+  it('renders a compatible service error when saving fails', async () => {
+    renderPage({ onSave: vi.fn().mockRejectedValue({ message: '流程保存失败', error_code: 'CONFLICT', request_id: 'req-workflow-1' }) });
+    fireEvent.click(screen.getByRole('button', { name: '保存 Workflow' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('流程保存失败');
+    expect(screen.getByRole('button', { name: '复制 request_id: req-workflow-1' })).toBeTruthy();
+  });
 });

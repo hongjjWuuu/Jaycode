@@ -1,6 +1,6 @@
 import logging
 
-from app.core.observability import JsonFormatter, MetricsRegistry
+from app.core.observability import JsonFormatter, MetricsRegistry, stable_error_code
 
 
 def test_domain_operation_metrics_are_low_cardinality_and_timed(monkeypatch) -> None:
@@ -10,8 +10,16 @@ def test_domain_operation_metrics_are_low_cardinality_and_timed(monkeypatch) -> 
     monkeypatch.setattr(observability, "metrics", registry)
     observability.record_domain_operation("workflow", "execute", 0.0, status="failed", error_code="ValueError")
     rendered = registry.render()
-    assert 'jaycode_domain_operations_total{domain="workflow",error_code="ValueError",operation="execute",status="failed"} 1.0' in rendered
-    assert 'jaycode_domain_operation_seconds_count{domain="workflow",error_code="ValueError",operation="execute",status="failed"} 1.0' in rendered
+    assert 'jaycode_domain_operations_total{domain="workflow",error_code="INTERNAL_ERROR",operation="execute",status="failed"} 1.0' in rendered
+    assert 'jaycode_domain_operation_seconds_count{domain="workflow",error_code="INTERNAL_ERROR",operation="execute",status="failed"} 1.0' in rendered
+
+
+def test_stable_error_codes_reduce_exception_implementation_details() -> None:
+    assert stable_error_code(ValueError("invalid graph")) == "VALIDATION_FAILED"
+    assert stable_error_code(PermissionError("not approved")) == "FORBIDDEN"
+    assert stable_error_code(TimeoutError("slow provider")) == "DEPENDENCY_TIMEOUT"
+    assert stable_error_code("API_KEY_UNAVAILABLE") == "API_KEY_UNAVAILABLE"
+    assert stable_error_code("some.dynamic.error") == "INTERNAL_ERROR"
 
 
 def test_json_logs_keep_correlation_fields_without_payloads() -> None:

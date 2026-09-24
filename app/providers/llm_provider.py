@@ -9,7 +9,7 @@ from uuid import uuid4
 from pydantic import BaseModel, ValidationError
 
 from app.core.security import execution_auth_context
-from app.core.observability import record_domain_operation
+from app.core.observability import record_domain_operation, stable_error_code
 from app.harness.events import utc_now_iso
 from app.persistence.factory import get_persistence_stores
 
@@ -349,7 +349,7 @@ class LLMProvider:
                 latency_ms=latency_ms,
                 token_usage={},
             )
-            record_domain_operation("llm", "generate", started, status="fallback", error_code=type(exc).__name__)
+            record_domain_operation("llm", "generate", started, status="fallback", error_code=stable_error_code(exc))
             return {
                 "text": fallback,
                 "answer_source": "fallback",

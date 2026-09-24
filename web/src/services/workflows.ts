@@ -1,1 +1,7 @@
-export { listWorkflows, saveWorkflow, updateWorkflow, validateWorkflow } from '../api';
+import type { WorkflowEdge, WorkflowNode, WorkflowRecord, WorkflowValidation } from '../types';
+import { requestJson } from './http';
+const json = (body: unknown): RequestInit => ({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+export async function listWorkflows(): Promise<WorkflowRecord[]> { return (await requestJson<{ workflows?: WorkflowRecord[] }>('/api/v1/workflows', {}, '工作流列表读取失败')).workflows ?? []; }
+export async function saveWorkflow(payload: { workflow_id?: string; name: string; description?: string; nodes: WorkflowNode[]; edges: WorkflowEdge[] }): Promise<WorkflowRecord> { return (await requestJson<{ workflow: WorkflowRecord }>('/api/v1/workflows', json(payload), '工作流保存失败')).workflow; }
+export async function updateWorkflow(workflowId: string, payload: { name: string; description?: string; nodes: WorkflowNode[]; edges: WorkflowEdge[] }): Promise<WorkflowRecord> { return (await requestJson<{ workflow: WorkflowRecord }>(`/api/v1/workflows/${encodeURIComponent(workflowId)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, '工作流更新失败')).workflow; }
+export function validateWorkflow(payload: { nodes: WorkflowNode[]; edges: WorkflowEdge[] }): Promise<WorkflowValidation> { return requestJson('/api/v1/workflows/validate', json({ nodes: payload.nodes.map(({ id, type, name, config }) => ({ id, type, name, config })), edges: payload.edges }), 'Workflow validation failed'); }

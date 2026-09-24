@@ -38,3 +38,12 @@ def test_unhandled_exception_is_not_exposed() -> None:
     assert response.status_code == 500
     assert response.json()["error_code"] == "INTERNAL_ERROR"
     assert "sensitive" not in response.text
+
+
+def test_http_metrics_use_route_template_not_resource_identifier() -> None:
+    client = TestClient(app)
+    response = client.get("/api/v1/tasks/task-contains-high-cardinality-id")
+    assert response.status_code == 404
+    metrics = client.get("/metrics").text
+    assert 'path="/api/v1/tasks/{task_id}"' in metrics
+    assert "task-contains-high-cardinality-id" not in metrics

@@ -9,7 +9,7 @@
   Workflow,
   Wrench,
 } from 'lucide-react';
-import { FormEvent, PointerEvent, ReactNode, Ref, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, ReactNode, useEffect, useMemo, useState } from 'react';
 import type { ComponentType } from 'react';
 import {
   applyReviewAction, askTask, getTaskDetail, getTaskEvents, listTasks, reviewTask,
@@ -45,7 +45,6 @@ import {
   McpStatus,
   McpToolCallLog,
   MemoryRecord,
-  NodeStatus,
   RagDocument,
   RagGoldCase,
   RagResult,
@@ -67,10 +66,8 @@ import {
 } from '../types';
 
 import { ViewKey, useViewNavigation } from '../hooks/useViewNavigation';
-import { useTaskWorkspace } from '../hooks/useTaskWorkspace';
-import { useWorkflowEditor } from '../hooks/useWorkflowEditor';
-import { ChatMessage, ChatMode, useKnowledgeChat } from '../hooks/useKnowledgeChat';
-import { useGovernanceConsole } from '../hooks/useGovernanceConsole';
+import { ChatMessage, ChatMode } from '../hooks/useKnowledgeChat';
+import { useWorkspaceCoordinator } from '../hooks/useWorkspaceCoordinator';
 import { FocusPicker, type FocusKind } from '../components/run/FocusPicker';
 import { PageBoundary } from '../components/PageBoundary';
 import { BenchmarkPage as BenchmarkConsolePage } from './BenchmarkPage';
@@ -85,7 +82,6 @@ import { SkillsPage as SkillsConsolePage } from './SkillsPage';
 import { WorkflowPage as WorkflowWorkspacePage } from './WorkflowPage';
 
 const defaultProjectPath = '.';
-const dragPayloadMime = 'application/jaycode-node';
 
 const modeHelp: Record<ExecutionMode, { title: string; description: string; button: string }> = {
   agent: {
@@ -189,10 +185,7 @@ const pageFrames: Record<ViewKey, ComponentType<{ children: ReactNode }>> = {
 export function WorkspaceApp() {
   const { activeView, setActiveView } = useViewNavigation();
   const ActivePage = pageFrames[activeView];
-  const taskWorkspace = useTaskWorkspace();
-  const workflowEditor = useWorkflowEditor(initialNodes, initialEdges);
-  const knowledgeChat = useKnowledgeChat();
-  const governance = useGovernanceConsole();
+  const { taskWorkspace, workflowEditor, knowledgeChat, governance } = useWorkspaceCoordinator(initialNodes, initialEdges);
   const {
     tasks, setTasks, selectedTaskId, setSelectedTaskId, events, setEvents,
     finalReport, setFinalReport, refreshTasks,
@@ -201,7 +194,9 @@ export function WorkspaceApp() {
     workflowId, setWorkflowId, workflowName, setWorkflowName, workflowDescription, setWorkflowDescription,
     savedWorkflows, setSavedWorkflows, nodes, setNodes, edges, setEdges, selectedNodeId, setSelectedNodeId,
     selectedEdgeKey, setSelectedEdgeKey, connectFrom, setConnectFrom, workflowValidation, setWorkflowValidation,
-    refreshWorkflows, persistWorkflow, checkWorkflow,
+    refreshWorkflows, persistWorkflow, checkWorkflow, selectedNode: editorSelectedNode, selectedEdge: editorSelectedEdge,
+    workflowCanvas: editorWorkflowCanvas, updateSelectedNode: editorUpdateSelectedNode, updateSelectedConfig: editorUpdateSelectedConfig,
+    updateSelectedEdge: editorUpdateSelectedEdge, deleteSelectedEdge: editorDeleteSelectedEdge, deleteSelectedNode: editorDeleteSelectedNode,
   } = workflowEditor;
   const {
     knowledgeDocs, setKnowledgeDocs, knowledgeResults, setKnowledgeResults, knowledgeNote, setKnowledgeNote,
@@ -250,11 +245,6 @@ export function WorkspaceApp() {
   const [focusLoading, setFocusLoading] = useState(false);
   const [focusError, setFocusError] = useState('');
 
-  const canvasRef = useRef<HTMLDivElement | null>(null);
-  const dragRef = useRef<{ id: string; dx: number; dy: number } | null>(null);
-  const panRef = useRef<{ x: number; y: number; scrollLeft: number; scrollTop: number } | null>(null);
-
-  const selectedNode = nodes.find((node) => node.id === selectedNodeId);
   const latestTaskId = useMemo(() => {
     const item = [...events].reverse().find((event) => event.task_id);
     return item?.task_id ?? selectedTaskId;
@@ -271,21 +261,6 @@ export function WorkspaceApp() {
   const taskNeedsReview =
     latestStatus === 'waiting_review' || tasks.find((task) => task.task_id === latestTaskId)?.status === 'waiting_review';
 
-  const nodeStatus = useMemo(() => {
-    const status: Record<string, NodeStatus> = {};
-    for (const node of nodes) status[node.id] = 'idle';
-    for (const event of events) {
-      const nodeId = String(event.data?.node_id ?? event.node ?? '');
-      if (nodeId && status[nodeId] !== undefined && event.status) status[nodeId] = event.status as NodeStatus;
-    }
-    return status;
-  }, [events, nodes]);
-
-  const canvasSize = useMemo(() => {
-    const maxX = Math.max(960, ...nodes.map((node) => node.x + 260));
-    const maxY = Math.max(460, ...nodes.map((node) => node.y + 150));
-    return { width: maxX, height: maxY };
-  }, [nodes]);
   const focusModules = useMemo(() => deriveModules(focusFiles), [focusFiles]);
 
   useEffect(() => {
@@ -908,140 +883,6 @@ export function WorkspaceApp() {
     setActiveView('workflow');
   }
 
-  function handleDrop(event: React.DragEvent<HTMLDivElement>) {
-    event.preventDefault();
-    const raw = event.dataTransfer.getData(dragPayloadMime);
-    if (!raw || !canvasRef.current) return;
-    const rect = canvasRef.current.getBoundingClientRect();
-    const item = JSON.parse(raw) as { type: string; name: string; config?: Record<string, unknown> };
-    const id = `${item.type}_${Date.now()}`;
-    const nextNode: WorkflowNode = {
-      id,
-      type: item.type,
-      name: item.name,
-      x: canvasRef.current.scrollLeft + event.clientX - rect.left - 82,
-      y: canvasRef.current.scrollTop + event.clientY - rect.top - 28,
-      config: item.config ?? {},
-    };
-    setNodes((prev) => [...prev, nextNode]);
-    setSelectedNodeId(id);
-    setSelectedEdgeKey('');
-  }
-
-  function startMove(event: PointerEvent<HTMLDivElement>, node: WorkflowNode) {
-    setSelectedNodeId(node.id);
-    setSelectedEdgeKey('');
-    const rect = event.currentTarget.getBoundingClientRect();
-    dragRef.current = { id: node.id, dx: event.clientX - rect.left, dy: event.clientY - rect.top };
-    event.currentTarget.setPointerCapture(event.pointerId);
-  }
-
-  function moveNode(event: PointerEvent<HTMLDivElement>) {
-    if (!dragRef.current || !canvasRef.current) return;
-    const rect = canvasRef.current.getBoundingClientRect();
-    const { id, dx, dy } = dragRef.current;
-    setNodes((prev) =>
-      prev.map((node) =>
-        node.id === id
-          ? {
-              ...node,
-              x: Math.max(8, Math.min(canvasSize.width - 180, canvasRef.current!.scrollLeft + event.clientX - rect.left - dx)),
-              y: Math.max(8, Math.min(canvasSize.height - 78, canvasRef.current!.scrollTop + event.clientY - rect.top - dy)),
-            }
-          : node,
-      ),
-    );
-  }
-
-  function startCanvasPan(event: PointerEvent<HTMLDivElement>) {
-    const target = event.target as HTMLElement;
-    if (target.closest('.flow-node') || target.closest('button')) return;
-    panRef.current = {
-      x: event.clientX,
-      y: event.clientY,
-      scrollLeft: event.currentTarget.scrollLeft,
-      scrollTop: event.currentTarget.scrollTop,
-    };
-    event.currentTarget.setPointerCapture(event.pointerId);
-  }
-
-  function panCanvas(event: PointerEvent<HTMLDivElement>) {
-    if (!panRef.current || !canvasRef.current) return;
-    canvasRef.current.scrollLeft = panRef.current.scrollLeft - (event.clientX - panRef.current.x);
-    canvasRef.current.scrollTop = panRef.current.scrollTop - (event.clientY - panRef.current.y);
-  }
-
-  function endPointer() {
-    dragRef.current = null;
-    panRef.current = null;
-  }
-
-  function handleCanvasPointerMove(event: PointerEvent<HTMLDivElement>) {
-    moveNode(event);
-    panCanvas(event);
-  }
-
-  function toggleConnect(nodeId: string) {
-    if (!connectFrom) {
-      setConnectFrom(nodeId);
-      return;
-    }
-    if (connectFrom !== nodeId) {
-      setEdges((prev) => {
-        const exists = prev.some((edge) => edge.source === connectFrom && edge.target === nodeId);
-        return exists ? prev : [...prev, { source: connectFrom, target: nodeId }];
-      });
-    }
-    setConnectFrom(null);
-  }
-
-  function updateSelectedNode(patch: Partial<WorkflowNode>) {
-    setNodes((prev) => prev.map((node) => (node.id === selectedNodeId ? { ...node, ...patch } : node)));
-  }
-
-  function updateSelectedConfig(key: string, value: unknown) {
-    setNodes((prev) =>
-      prev.map((node) => (node.id === selectedNodeId ? { ...node, config: { ...node.config, [key]: value } } : node)),
-    );
-  }
-
-  function updateEdge(edgeKey: string, patch: Partial<WorkflowEdge>) {
-    setEdges((prev) => prev.map((edge) => (edgeKeyFor(edge) === edgeKey ? { ...edge, ...patch } : edge)));
-  }
-
-  function deleteEdge(edgeKey: string) {
-    setEdges((prev) => prev.filter((edge) => edgeKeyFor(edge) !== edgeKey));
-    if (selectedEdgeKey === edgeKey) setSelectedEdgeKey('');
-  }
-
-  function deleteSelectedNode() {
-    setNodes((prev) => prev.filter((node) => node.id !== selectedNodeId));
-    setEdges((prev) => prev.filter((edge) => edge.source !== selectedNodeId && edge.target !== selectedNodeId));
-    setSelectedNodeId('');
-    setSelectedEdgeKey('');
-  }
-
-  const workflowCanvas = {
-    canvasRef,
-    canvasSize,
-    connectFrom,
-    edges,
-    nodes,
-    nodeStatus,
-    selectedNodeId,
-    selectedEdgeKey,
-    onCanvasPointerMove: handleCanvasPointerMove,
-    onDrop: handleDrop,
-    onEndPointer: endPointer,
-    onStartCanvasPan: startCanvasPan,
-    onStartMove: startMove,
-    onSelectEdge: (edge: WorkflowEdge) => {
-      setSelectedEdgeKey(edgeKeyFor(edge));
-      setSelectedNodeId('');
-    },
-    onToggleConnect: toggleConnect,
-  };
-
   return (
     <div className="app-shell">
       <aside className="side-nav">
@@ -1090,9 +931,9 @@ export function WorkspaceApp() {
         {activeView === 'workflow' ? (
           <WorkflowWorkspacePage
             name={workflowName} description={workflowDescription} validation={workflowValidation} workflows={savedWorkflows}
-            canvas={workflowCanvas}
-            nodeConfig={{ node: selectedNode, approvals: skillApprovals, onNodeChange: updateSelectedNode, onConfigChange: updateSelectedConfig, onApproveSkill: async (skillCode, agentCode) => handleSkillApproval(skillCode, agentCode, true, 'Approved from Workflow node config.'), onDelete: deleteSelectedNode }}
-            edgeConfig={{ edge: edges.find((edge) => edgeKeyFor(edge) === selectedEdgeKey), nodes, onChange: (patch) => selectedEdgeKey && updateEdge(selectedEdgeKey, patch), onDelete: () => selectedEdgeKey && deleteEdge(selectedEdgeKey) }}
+            canvas={editorWorkflowCanvas}
+            nodeConfig={{ node: editorSelectedNode, approvals: skillApprovals, onNodeChange: editorUpdateSelectedNode, onConfigChange: editorUpdateSelectedConfig, onApproveSkill: async (skillCode, agentCode) => handleSkillApproval(skillCode, agentCode, true, 'Approved from Workflow node config.'), onDelete: editorDeleteSelectedNode }}
+            edgeConfig={{ edge: editorSelectedEdge, nodes, onChange: editorUpdateSelectedEdge, onDelete: editorDeleteSelectedEdge }}
             onNameChange={setWorkflowName} onDescriptionChange={setWorkflowDescription} onSave={handleSaveWorkflow}
             onValidate={handleValidateWorkflow} onLoad={loadWorkflow} onRefresh={refreshWorkflows}
           />
@@ -1280,10 +1121,6 @@ function normalizeNodes(nodes: WorkflowNode[]): WorkflowNode[] {
     y: Number.isFinite(node.y) ? node.y : 92,
     config: node.config ?? {},
   }));
-}
-
-function edgeKeyFor(edge: WorkflowEdge) {
-  return `${edge.source}->${edge.target}:${edge.condition ?? 'always'}:${edge.value ?? ''}:${edge.source_path ?? ''}`;
 }
 
 function firstLine(value?: string) {

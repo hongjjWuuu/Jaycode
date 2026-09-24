@@ -184,8 +184,9 @@ async def security_middleware(request: Request, call_next: Callable[[Request], A
         try:
             response = await call_next(request)
             response.headers["X-Request-ID"] = request_id
-            metrics.inc("jaycode_http_requests_total", labels={"path": request.url.path, "status": str(response.status_code)})
-            metrics.observe("jaycode_http_request", started, {"path": request.url.path})
+            metric_path = _metric_path(request)
+            metrics.inc("jaycode_http_requests_total", labels={"path": metric_path, "status": str(response.status_code)})
+            metrics.observe("jaycode_http_request", started, {"path": metric_path})
             return response
         finally:
             _request_context.reset(token)
@@ -205,9 +206,17 @@ async def security_middleware(request: Request, call_next: Callable[[Request], A
         response = await call_next(request)
         response.headers["X-Request-ID"] = request_id
         _audit(context, request.method, request.url.path, str(response.status_code), {"required_role": required})
-        metrics.inc("jaycode_http_requests_total", labels={"path": request.url.path, "status": str(response.status_code)})
-        metrics.observe("jaycode_http_request", started, {"path": request.url.path})
+        metric_path = _metric_path(request)
+        metrics.inc("jaycode_http_requests_total", labels={"path": metric_path, "status": str(response.status_code)})
+        metrics.observe("jaycode_http_request", started, {"path": metric_path})
         logger.info("request_completed", extra={"request_id": request_id, "actor_id": context.actor_id, "role": context.role, "status": str(response.status_code), "latency_ms": round((time.perf_counter() - started) * 1000, 2)})
         return response
     finally:
         _request_context.reset(token)
+
+
+def _metric_path(request: Request) -> str:
+    """Use the FastAPI route template so metric labels remain bounded."""
+    route = request.scope.get("route")
+    path = getattr(route, "path", None)
+    return str(path) if path else request.url.path

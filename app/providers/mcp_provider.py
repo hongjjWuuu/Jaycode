@@ -13,7 +13,7 @@ from uuid import uuid4
 
 from app.agents.project_tools import EXCLUDED_DIRS
 from app.core.config import settings
-from app.core.observability import record_domain_operation
+from app.core.observability import record_domain_operation, stable_error_code
 from app.core.security import execution_auth_context
 from app.harness.events import utc_now_iso
 from app.persistence.factory import get_persistence_stores
@@ -374,7 +374,7 @@ class RealMCPProvider:
                     "created_at": utc_now_iso(),
                 }
             )
-            record_domain_operation("mcp", "call_tool", started, status="failed", error_code=type(exc).__name__)
+            record_domain_operation("mcp", "call_tool", started, status="failed", error_code=stable_error_code(exc))
             raise
 
     def list_call_logs(self, limit: int = 100, server_id: str | None = None) -> list[dict[str, Any]]:

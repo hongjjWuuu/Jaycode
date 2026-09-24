@@ -161,7 +161,7 @@ def run_compiled_workflow(
     extra_state: dict[str, Any] | None = None,
     entry_node_id: str | None = None,
 ) -> dict[str, Any]:
-    from app.core.observability import record_domain_operation
+    from app.core.observability import record_domain_operation, stable_error_code
     import time
 
     started = time.perf_counter()
@@ -219,7 +219,7 @@ def run_compiled_workflow(
         record_domain_operation("workflow", "execute", started, status="success")
         return response
     except Exception as exc:
-        record_domain_operation("workflow", "execute", started, status="failed", error_code=type(exc).__name__)
+        record_domain_operation("workflow", "execute", started, status="failed", error_code=stable_error_code(exc))
         raise
 
 # 入口函数
