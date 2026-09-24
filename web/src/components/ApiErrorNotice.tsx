@@ -6,15 +6,26 @@ export function ApiErrorNotice({ error, fallback = '请求失败，请稍后重�
   const [copied, setCopied] = useState(false);
   if (!error) return null;
   const apiError = error instanceof ApiError ? error : null;
-  const message = apiError?.message || (error instanceof Error ? error.message : typeof error === 'string' ? error : fallback);
+  const envelope = !apiError && isErrorEnvelope(error) ? error : null;
+  const message = apiError?.message || envelope?.message || (error instanceof Error ? error.message : typeof error === 'string' ? error : fallback);
+  const errorCode = apiError?.errorCode ?? envelope?.error_code;
+  const requestId = apiError?.requestId ?? envelope?.request_id;
   const copyRequestId = async () => {
-    if (!apiError?.requestId || !navigator.clipboard?.writeText) return;
-    await navigator.clipboard.writeText(apiError.requestId);
+    if (!requestId || !navigator.clipboard?.writeText) return;
+    await navigator.clipboard.writeText(requestId);
     setCopied(true);
   };
   return <div className="error-text" role="alert">
     <p>{message}</p>
-    {apiError ? <small>错误码：{apiError.errorCode}</small> : null}
-    {apiError?.requestId ? <button type="button" className="secondary" onClick={() => void copyRequestId()}>{copied ? '已复制 request_id' : `复制 request_id: ${apiError.requestId}`}</button> : null}
+    {errorCode ? <small>错误码：{errorCode}</small> : null}
+    {requestId ? <button type="button" className="secondary" onClick={() => void copyRequestId()}>{copied ? '已复制 request_id' : `复制 request_id: ${requestId}`}</button> : null}
   </div>;
+}
+
+type ErrorEnvelope = { message: string; error_code?: string; request_id?: string };
+
+function isErrorEnvelope(value: unknown): value is ErrorEnvelope {
+  if (!value || typeof value !== 'object') return false;
+  const data = value as Record<string, unknown>;
+  return typeof data.message === 'string';
 }

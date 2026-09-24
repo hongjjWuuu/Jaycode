@@ -19,4 +19,11 @@ describe('ApiErrorNotice', () => {
     render(<ApiErrorNotice error={new Error('暂时不可用')} />);
     expect(screen.getByRole('alert')).toHaveTextContent('暂时不可用');
   });
+
+  it('accepts a plain compatible error envelope from a page callback', () => {
+    render(<ApiErrorNotice error={{ message: '知识库不可用', error_code: 'DEPENDENCY_UNAVAILABLE', request_id: 'req-plain-1' }} />);
+    expect(screen.getByRole('alert')).toHaveTextContent('知识库不可用');
+    expect(screen.getByText('错误码：DEPENDENCY_UNAVAILABLE')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '复制 request_id: req-plain-1' })).toBeTruthy();
+  });
 });

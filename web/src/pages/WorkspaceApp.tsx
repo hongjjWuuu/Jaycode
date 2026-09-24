@@ -1109,7 +1109,7 @@ export function WorkspaceApp() {
             suggestions={suggestions}
             suggestionRecords={suggestionRecords}
             knowledgeDocumentCount={knowledgeDocs.length}
-            onOpenKnowledge={() => { setChatMode('knowledge'); setActiveView('chat'); handleQueryKnowledge(); }}
+            onOpenKnowledge={async () => { setChatMode('knowledge'); setActiveView('chat'); await handleQueryKnowledge(); }}
           />
         ) : null}
         {activeView === 'chat' ? (

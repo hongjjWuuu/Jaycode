@@ -14,4 +14,10 @@ describe('HistoryPage', () => {
     expect(onRefresh).toHaveBeenCalledOnce();
     expect(screen.getByText('选择历史任务后，这里会显示完整执行事件。')).toBeTruthy();
   });
+
+  it('shows a compatible API error when history refresh fails', async () => {
+    render(<HistoryPage tasks={[]} selectedTaskId="" events={[]} finalReport="" onOpen={vi.fn()} onRefresh={vi.fn().mockRejectedValue({ message: '历史加载失败', error_code: 'dependency_unavailable', request_id: 'req-history-1' })} />);
+    fireEvent.click(document.querySelector('.history-list-panel .icon-button')!);
+    expect(await screen.findByRole('alert')).toHaveTextContent('历史加载失败');
+  });
 });
