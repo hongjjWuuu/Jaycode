@@ -4,7 +4,7 @@ from app.core.observability import JsonFormatter, MetricsRegistry, stable_error_
 
 
 def test_domain_operation_metrics_are_low_cardinality_and_timed(monkeypatch) -> None:
-    import app.core.observability as observability
+    from app.core import observability
 
     registry = MetricsRegistry()
     monkeypatch.setattr(observability, "metrics", registry)

@@ -71,7 +71,7 @@ Jaycode 用分层把这些问题拆开了。
 ### 3.1 核心入口
 
 - `web/src/App.tsx`
-- `web/src/api.ts`
+- `web/src/services/`
 - `web/src/types.ts`
 
 ### 3.2 前端承担什么职责

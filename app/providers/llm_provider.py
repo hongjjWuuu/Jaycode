@@ -8,8 +8,8 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ValidationError
 
-from app.core.security import execution_auth_context
 from app.core.observability import record_domain_operation, stable_error_code
+from app.core.security import execution_auth_context
 from app.harness.events import utc_now_iso
 from app.persistence.factory import get_persistence_stores
 

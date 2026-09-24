@@ -12,17 +12,6 @@
 import { FormEvent, ReactNode, useEffect, useMemo, useState } from 'react';
 import type { ComponentType } from 'react';
 import {
-  applyReviewAction, askTask, getTaskDetail, getTaskEvents, listTasks, reviewTask,
-  runCollaborationTaskStream, runTaskStream,
-} from '../services/tasks';
-import {
-  addKnowledgeNote, confirmMemory, deleteMemory, deleteRagGoldCase, extractMemoryCandidates,
-  listKnowledgeDocuments, listMemories, listRagGoldCases, queryKnowledge, rejectMemory, saveRagGoldCase,
-} from '../services/rag';
-import { chatLearningCoach, createTaskLearningPlan, listLearningPlans, updateLearningPlanStatus } from '../services/learning';
-import { listProjectFiles } from '../services/projectFiles';
-import { listWorkflows, saveWorkflow, updateWorkflow, validateWorkflow } from '../services/workflows';
-import {
   AgentEvent,
   AgentOutput,
   AskResponse,
@@ -188,7 +177,8 @@ export function WorkspaceApp() {
   const { taskWorkspace, workflowEditor, knowledgeChat, governance } = useWorkspaceCoordinator(initialNodes, initialEdges);
   const {
     tasks, setTasks, selectedTaskId, setSelectedTaskId, events, setEvents,
-    finalReport, setFinalReport, refreshTasks,
+    finalReport, setFinalReport, refreshTasks, runTaskStream, runCollaborationTaskStream,
+    getTaskDetail, getTaskEvents, reviewTask, applyReviewAction, askTask, listProjectFiles,
   } = taskWorkspace;
   const {
     workflowId, setWorkflowId, workflowName, setWorkflowName, workflowDescription, setWorkflowDescription,
@@ -203,6 +193,8 @@ export function WorkspaceApp() {
     memories, chatMode, setChatMode, chatInput, setChatInput, chatMessages, setChatMessages, chatSources, setChatSources,
     learningPlans, refreshMemories, refreshLearningPlans, confirm: confirmMemoryCandidate,
     reject: rejectMemoryCandidate, remove: removeMemoryCandidate, setPlanStatus,
+    chatLearningCoach, createTaskLearningPlan, addKnowledgeNote, extractMemoryCandidates,
+    listKnowledgeDocuments, queryKnowledge,
   } = knowledgeChat;
   const {
     llmTraces, llmTraceAgent, llmPrompts, llmUsage, llmAgentFilter,

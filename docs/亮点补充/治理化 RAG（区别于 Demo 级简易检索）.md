@@ -173,7 +173,7 @@ json
 
 前端对应的调用入口主要在：
 
-- [web/src/api.ts](../../web/src/api.ts)
+- [web/src/services/rag.ts](../../web/src/services/rag.ts)
 - [web/src/App.tsx](../../web/src/App.tsx)
 
 ---
@@ -530,7 +530,7 @@ Gold Set 是“标准答案集合”。
 - `listRagGoldCases(...)`
 - `saveRagGoldCase(...)`
 
-都在 [web/src/api.ts](../../web/src/api.ts) 里。
+都在 [web/src/services/rag.ts](../../web/src/services/rag.ts) 里。
 
 对应到页面上，主要是：
 

@@ -1235,7 +1235,7 @@ http://127.0.0.1:8100/health
 
 ```text
 React 页面
-  -> web/src/api.ts
+  -> web/src/services/*
   -> FastAPI 路由
   -> app/services
   -> Harness Runtime / Graphs

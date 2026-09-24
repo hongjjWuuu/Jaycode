@@ -7,7 +7,7 @@ import base64
 import hashlib
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -16,7 +16,6 @@ from app.core.config import settings
 from app.persistence.migration_mapping import MAPPING_VERSION, TABLE_MAPPINGS
 from app.persistence.postgres_store import PostgresTaskStore
 from app.persistence.sqlite_path import resolve_sqlite_path
-
 
 CUTOVER_TARGET_ENV = "JAYCODE_CUTOVER_DATABASE_URL"
 CUTOVER_DATABASE_NAME = "jayagent_studio"
@@ -234,7 +233,7 @@ def _canonical(value: Any) -> Any:
         # PostgreSQL normalizes TIMESTAMPTZ values to the connection timezone;
         # compare instants, not their original +08:00 / +00:00 rendering.
         if value.tzinfo is not None:
-            return value.astimezone(timezone.utc).isoformat()
+            return value.astimezone(UTC).isoformat()
         return value.isoformat()
     if isinstance(value, bytes):
         return _json_value(value)

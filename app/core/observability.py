@@ -7,7 +7,6 @@ import time
 from collections import defaultdict
 from typing import Any
 
-
 _EXCEPTION_ERROR_CODES: tuple[tuple[type[BaseException], str], ...] = (
     (PermissionError, "FORBIDDEN"),
     (FileNotFoundError, "NOT_FOUND"),
@@ -70,7 +69,7 @@ class MetricsRegistry:
             values = list(self._values.items())
         lines = ["# HELP jaycode_info Jaycode runtime information", "# TYPE jaycode_info gauge", 'jaycode_info{service="jaycode"} 1']
         for (name, labels), value in sorted(values):
-            label_text = "".join(f'{key}="{str(value).replace(chr(92), chr(92) * 2).replace(chr(34), chr(92) + chr(34))}"' for key, value in labels)
+            label_text = ",".join(f'{key}="{str(value).replace(chr(92), chr(92) * 2).replace(chr(34), chr(92) + chr(34))}"' for key, value in labels)
             lines.append(f"{name}{{{label_text}}} {value}" if label_text else f"{name} {value}")
         return "\n".join(lines) + "\n"
 

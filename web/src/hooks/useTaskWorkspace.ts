@@ -1,5 +1,9 @@
 import { useCallback, useState } from 'react';
-import { listTasks } from '../services/tasks';
+import {
+  applyReviewAction, askTask, getTaskDetail, getTaskEvents, listTasks, reviewTask,
+  runCollaborationTaskStream, runTaskStream,
+} from '../services/tasks';
+import { listProjectFiles } from '../services/projectFiles';
 import type { AgentEvent, TaskSummary } from '../types';
 
 /** Shared task context for Run, Reports, Chat, and History without a global store. */
@@ -16,5 +20,7 @@ export function useTaskWorkspace() {
   return {
     tasks, setTasks, selectedTaskId, setSelectedTaskId, events, setEvents,
     finalReport, setFinalReport, refreshTasks,
+    runTaskStream, runCollaborationTaskStream, getTaskDetail, getTaskEvents,
+    reviewTask, applyReviewAction, askTask, listProjectFiles,
   };
 }

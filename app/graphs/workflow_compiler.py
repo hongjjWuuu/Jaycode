@@ -161,8 +161,9 @@ def run_compiled_workflow(
     extra_state: dict[str, Any] | None = None,
     entry_node_id: str | None = None,
 ) -> dict[str, Any]:
-    from app.core.observability import record_domain_operation, stable_error_code
     import time
+
+    from app.core.observability import record_domain_operation, stable_error_code
 
     started = time.perf_counter()
     try:

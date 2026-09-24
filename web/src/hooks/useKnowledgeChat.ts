@@ -1,6 +1,9 @@
 import { useCallback, useState } from 'react';
-import { listLearningPlans, updateLearningPlanStatus } from '../services/learning';
-import { confirmMemory, deleteMemory, listMemories, rejectMemory } from '../services/rag';
+import { chatLearningCoach, createTaskLearningPlan, listLearningPlans, updateLearningPlanStatus } from '../services/learning';
+import {
+  addKnowledgeNote, confirmMemory, deleteMemory, extractMemoryCandidates,
+  listKnowledgeDocuments, listMemories, queryKnowledge, rejectMemory,
+} from '../services/rag';
 import type { LearningPlanRecord, MemoryRecord, RagDocument, RagResult } from '../types';
 
 export type ChatMode = 'task' | 'knowledge' | 'coach';
@@ -26,5 +29,8 @@ export function useKnowledgeChat() {
 
   return { knowledgeDocs, setKnowledgeDocs, knowledgeResults, setKnowledgeResults, knowledgeNote, setKnowledgeNote,
     memories, chatMode, setChatMode, chatInput, setChatInput, chatMessages, setChatMessages, chatSources, setChatSources,
-    learningPlans, refreshMemories, refreshLearningPlans, confirm, reject, remove, setPlanStatus };
+    learningPlans, refreshMemories, refreshLearningPlans, confirm, reject, remove, setPlanStatus,
+    chatLearningCoach, createTaskLearningPlan, addKnowledgeNote, extractMemoryCandidates,
+    listKnowledgeDocuments, queryKnowledge,
+  };
 }

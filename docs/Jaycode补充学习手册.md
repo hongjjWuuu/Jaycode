@@ -186,7 +186,7 @@ Benchmark 不是临时脚本，而是可保存、可对比、可复跑的评测�
 关键文件：
 
 - [web/src/App.tsx](../web/src/App.tsx)
-- [web/src/api.ts](../web/src/api.ts)
+- [web/src/services/](../web/src/services/)
 - [web/src/types.ts](../web/src/types.ts)
 - [web/src/main.tsx](../web/src/main.tsx)
 - [web/src/styles.css](../web/src/styles.css)

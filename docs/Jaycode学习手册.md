@@ -1156,7 +1156,7 @@ rag_store = create_rag_store()
 ### 4.3 第 3 层：最后看产品层
 
 13. `web/src/App.tsx`
-14. `web/src/api.ts`
+14. `web/src/services/`
 15. `web/src/types.ts`
 16. `app/marketplace/*`
 17. `app/providers/mcp_provider.py`
@@ -1167,9 +1167,9 @@ rag_store = create_rag_store()
 - 结构：运行、工作流、报告、追问、历史、LLM、MCP、Skills、Marketplace、Benchmark 等页面
 - 学习重点：理解一个 Agent 平台前端应该有哪些控制台能力
 
-#### 4.3.2 `web/src/api.ts`
+#### 4.3.2 `web/src/services/`
 
-- 作用：前端 API 封装
+- 作用：按 Tasks、RAG、Learning、Workflow、LLM、MCP、Skills、Marketplace 与 Benchmark 分域的前端 API 封装；共享 HTTP/SSE 与错误信封解析位于 `services/http.ts`。
 - 结构：统一请求方法、接口调用函数、数据转换
 - 学习重点：理解前端如何和后端统一通信
 
