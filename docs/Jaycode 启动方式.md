@@ -75,6 +75,7 @@ npm run dev -- --host 127.0.0.1 --port 5173
 - PostgreSQL 容器可继续运行；下次启动会继续使用 `jayagent_studio`，**无需再次迁移**。
 - 若需要停止容器：`docker compose -f docker-compose.pgvector.yml stop`。不要运行会删除卷的命令。
 - PostgreSQL 已是权威库。发生故障时不要只修改 `.env` 切回 SQLite；应先冻结写入、保留现状并执行数据对账与恢复方案。
+- 每日备份、Task Scheduler 与隔离恢复演练见 [P3 单机运维手册](P3%20单机运维手册.md)。
 
 ## 可选：由 API 进程守护 Worker
 

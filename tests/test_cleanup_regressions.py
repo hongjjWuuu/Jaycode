@@ -67,5 +67,11 @@ def test_markdown_local_links_resolve() -> None:
 
 
 def test_frontend_default_project_path_is_portable() -> None:
-    source = (ROOT / "web/src/pages/WorkspaceApp.tsx").read_text(encoding="utf-8")
+    source = (ROOT / "web/src/pages/WorkspaceRuntime.tsx").read_text(encoding="utf-8")
     assert "const defaultProjectPath = '.';" in source
+
+
+def test_workspace_entry_is_a_small_service_free_shell() -> None:
+    source = (ROOT / "web/src/pages/WorkspaceApp.tsx").read_text(encoding="utf-8")
+    assert len(source.splitlines()) <= 400
+    assert "../services" not in source

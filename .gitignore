@@ -24,6 +24,7 @@ data/*.db-*
 data/*.sqlite
 data/*.sqlite3
 data/backups/
+data/postgres-backups/
 .postgres-data/
 .jaycode/
 *.db

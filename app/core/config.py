@@ -17,6 +17,12 @@ class Settings(BaseSettings):
         validation_alias="JAYCODE_WORKER_SUPERVISOR_STARTUP_TIMEOUT_SECONDS",
     )
     jaycode_worker_count: int = Field(default=1, ge=1, le=16, validation_alias="JAYCODE_WORKER_COUNT")
+    jaycode_operations_stale_queue_seconds: int = Field(
+        default=300, ge=30, le=86_400, validation_alias="JAYCODE_OPERATIONS_STALE_QUEUE_SECONDS"
+    )
+    jaycode_operations_failed_task_limit: int = Field(
+        default=20, ge=1, le=100, validation_alias="JAYCODE_OPERATIONS_FAILED_TASK_LIMIT"
+    )
     jaycode_llm_fallback_rate_threshold: float = Field(default=0.2, ge=0, le=1, validation_alias="JAYCODE_LLM_FALLBACK_RATE_THRESHOLD")
     jaycode_llm_schema_failure_rate_threshold: float = Field(default=0.05, ge=0, le=1, validation_alias="JAYCODE_LLM_SCHEMA_FAILURE_RATE_THRESHOLD")
     jaycode_llm_p95_latency_threshold_ms: int = Field(default=30000, ge=1, validation_alias="JAYCODE_LLM_P95_LATENCY_THRESHOLD_MS")

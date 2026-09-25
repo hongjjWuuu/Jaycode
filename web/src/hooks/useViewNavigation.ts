@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 export const viewKeys = [
-  'run', 'workflow', 'reports', 'chat', 'history', 'llm', 'mcp', 'skills', 'marketplace', 'benchmark',
+  'run', 'workflow', 'reports', 'chat', 'history', 'operations', 'llm', 'mcp', 'skills', 'marketplace', 'benchmark',
 ] as const;
 
 export type ViewKey = typeof viewKeys[number];

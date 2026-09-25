@@ -23,7 +23,10 @@ def test_domain_routers_preserve_every_legacy_api_operation() -> None:
         for router in _domain_routers
         for operation in _operations(list(router.routes), prefix="/api/v1")
     }
-    assert split_operations == legacy_operations
+    # New domain routers may be introduced without adding them to the legacy
+    # compatibility router. The invariant is that no established operation is
+    # silently lost during the split.
+    assert legacy_operations <= split_operations
 
 
 def test_domain_service_is_an_explicit_reusable_invocation_boundary() -> None:

@@ -171,7 +171,7 @@ Jaycode/
 - Node.js 18 或更高版本
 - npm
 - Windows、macOS 或 Linux
-- Docker 可选，用于 Docker Skill Sandbox 或 PgVector
+- Docker Desktop（正式运行必需，用于 PostgreSQL/pgvector；也用于 Docker Skill Sandbox）
 
 ## 快速启动
 
@@ -210,7 +210,7 @@ python -m pip install -e ".[dev,vector]"
 Copy-Item .env.example .env
 ```
 
-然后编辑 `.env`，填写本地使用的 LLM 配置：
+然后编辑 `.env`，将 `DATABASE_URL` 与 `PGVECTOR_DATABASE_URL` 配置为同一 PostgreSQL `jayagent_studio` 目标，并填写本地使用的 LLM 配置。SQLite 文件仅作为迁移历史和兼容实现保留，不能作为正式服务回退目标。
 
 ```env
 OPENAI_API_KEY=<your-api-key>
@@ -222,7 +222,15 @@ JAYCODE_AGENT_LLM=<your-model-name>
 
 本地开发如需保持免认证模式，必须在 `.env` 中显式设置 `JAYCODE_AUTH_ENABLED=false`；生产环境保持认证开启，并配置 `JAYCODE_API_KEYS`，格式为 `key:role`，角色可选 `user`、`reviewer`、`admin`。Marketplace 远程包默认关闭，MCP stdio command 也必须配置在 `JAYCODE_MCP_ALLOWED_COMMANDS` 白名单中。
 
-### 4. 启动后端
+### 4. 启动 PostgreSQL、API 与 Worker
+
+正式日常启动、Supervisor 选择、停止与恢复原则以 [Jaycode 启动方式](docs/Jaycode%20启动方式.md) 为唯一入口。先启动 PostgreSQL：
+
+```powershell
+docker compose -f docker-compose.pgvector.yml up -d
+```
+
+再启动 API；需要处理任务时启动独立 Worker，或者在 `.env` 中启用 API Worker Supervisor。不要同时使用两种 Worker 模式。
 
 ```powershell
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8100 --reload
@@ -246,7 +254,7 @@ API 文档：
 http://127.0.0.1:8100/docs
 ```
 
-### 5. 启动前端
+### 5. 启动前端开发服务器（可选）
 
 ```powershell
 Set-Location web
@@ -260,9 +268,9 @@ npm run dev -- --host 127.0.0.1 --port 5173
 http://127.0.0.1:5173
 ```
 
-### 6. 一键启动
+### 6. 历史一键启动脚本
 
-项目提供 Windows 启动脚本：
+以下脚本仅适合初始化或前端开发；正式运行请使用上面的 PostgreSQL、API、Worker 顺序：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\setup-and-start.ps1
@@ -348,13 +356,17 @@ npm run build
 
 ## Docker
 
-启动 PgVector 相关服务：
+启动正式 PostgreSQL / pgvector 服务：
 
 ```powershell
 docker compose -f docker-compose.pgvector.yml up -d
 ```
 
 Docker Skill Sandbox 需要 Docker Engine 正常运行。生产环境不建议在 Docker 执行失败时静默降级到不隔离的本地执行模式。
+
+## 运维与恢复
+
+每日备份、隔离恢复演练、Task Scheduler 注册和故障恢复原则见 [P3 单机运维手册](docs/P3%20单机运维手册.md)。不要通过修改 `.env` 从 PostgreSQL 回退到 SQLite。
 
 ## 安全说明
 

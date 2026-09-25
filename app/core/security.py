@@ -104,6 +104,10 @@ def _context_from_request(request: Request, request_id: str) -> AuthContext | No
 
 def required_role(method: str, path: str) -> str:
     normalized = path.lower()
+    # Operations includes read-only runtime and failure metadata. It is not a
+    # general user-facing GET endpoint, so protect it before the GET default.
+    if normalized.startswith("/api/v1/operations"):
+        return "admin"
     if method.upper() in {"GET", "HEAD", "OPTIONS"}:
         return "user"
     if normalized.startswith("/api/v1/tasks/") and any(

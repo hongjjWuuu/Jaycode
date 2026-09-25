@@ -8,6 +8,7 @@ from app.api.routes import (
     llm,
     marketplace,
     mcp,
+    operations,
     projects,
     rag,
     security,
@@ -31,6 +32,7 @@ _domain_routers = (
     benchmarks.router,
     llm.router,
     security.router,
+    operations.router,
 )
 _registered_paths = {
     f"/api/v1{route.path}"

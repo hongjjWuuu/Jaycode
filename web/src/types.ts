@@ -22,6 +22,26 @@ export type TaskSummary = {
   final_report?: string;
 };
 
+export type OperationsAlert = {
+  code: string;
+  severity: 'critical' | 'warning' | string;
+  message: string;
+};
+
+export type OperationsTask = Pick<TaskSummary, 'task_id' | 'status' | 'created_at' | 'updated_at'>;
+
+export type OperationsOverview = {
+  generated_at: string;
+  readiness: { database: boolean; supervisor: boolean };
+  supervisor: { status: string; worker_count: number; active_workers: number; restart_count: number; alive: boolean };
+  workers: Array<{ worker_id?: string; status?: string; last_heartbeat?: string }>;
+  task_counts: Record<string, number>;
+  oldest_queued_task: OperationsTask | null;
+  waiting_review: OperationsTask[];
+  recent_failed: OperationsTask[];
+  alerts: OperationsAlert[];
+};
+
 export type TaskArtifact = {
   artifact_type: string;
   name: string;
