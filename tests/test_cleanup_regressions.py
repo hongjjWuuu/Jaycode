@@ -75,3 +75,13 @@ def test_workspace_entry_is_a_small_service_free_shell() -> None:
     source = (ROOT / "web/src/pages/WorkspaceApp.tsx").read_text(encoding="utf-8")
     assert len(source.splitlines()) <= 400
     assert "../services" not in source
+
+
+def test_workspace_runtime_stays_service_free_and_delegates_task_lifecycle() -> None:
+    source = (ROOT / "web/src/pages/WorkspaceRuntime.tsx").read_text(encoding="utf-8")
+    assert "../services/" not in source
+    assert "runTaskStream" not in source
+    assert "runCollaborationTaskStream" not in source
+    assert "getTaskDetail" not in source
+    assert "getTaskEvents" not in source
+    assert "consumeTaskPayload" not in source

@@ -58,7 +58,7 @@ Jaycode 不只是一个简单的聊天机器人或代码审查 Demo，而是一�
 - Gold Set 评测
 - 项目记忆和手动知识笔记
 
-默认使用 SQLite 作为本地存储，也可以按配置切换到 PgVector。
+正式运行统一使用 PostgreSQL `jayagent_studio` 与同库 pgvector；SQLite 仅保留为兼容实现和迁移历史。
 
 ### Skill 插件体系
 
