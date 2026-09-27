@@ -47,6 +47,22 @@ export function useWorkflowEditor(initialNodes: WorkflowNode[], initialEdges: Wo
       setWorkflowValidation({ valid: false, errors: [exc instanceof Error ? exc.message : String(exc)], warnings: [], node_count: nodes.length, edge_count: edges.length, parallel_sources: [] });
     }
   }, [edges, nodes]);
+  const loadWorkflow = useCallback((workflow: WorkflowRecord) => {
+    setWorkflowId(workflow.workflow_id);
+    setWorkflowName(workflow.name);
+    setWorkflowDescription(workflow.description ?? '');
+    setNodes(workflow.nodes.map((node, index) => ({ ...node, x: Number.isFinite(node.x) ? node.x : 64 + index * 228, y: Number.isFinite(node.y) ? node.y : 92, config: node.config ?? {} })));
+    setEdges(workflow.edges ?? []);
+    setSelectedNodeId(workflow.nodes[0]?.id ?? '');
+    setSelectedEdgeKey('');
+    setWorkflowValidation(null);
+  }, []);
+  const applyPlannedWorkflow = useCallback((workflow: { nodes: WorkflowNode[]; edges: WorkflowEdge[] }) => {
+    setNodes(workflow.nodes.map((node, index) => ({ ...node, x: Number.isFinite(node.x) ? node.x : 64 + index * 228, y: Number.isFinite(node.y) ? node.y : 92, config: node.config ?? {} })));
+    setEdges(workflow.edges ?? []);
+    setWorkflowName('Planner Generated Workflow');
+    setWorkflowDescription('Generated from task goal by Planner mode.');
+  }, []);
 
   const handleDrop = useCallback((event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -93,6 +109,6 @@ export function useWorkflowEditor(initialNodes: WorkflowNode[], initialEdges: Wo
   return { workflowId, setWorkflowId, workflowName, setWorkflowName, workflowDescription, setWorkflowDescription,
     savedWorkflows, setSavedWorkflows, nodes, setNodes, edges, setEdges, selectedNodeId, setSelectedNodeId,
     selectedEdgeKey, setSelectedEdgeKey, connectFrom, setConnectFrom, workflowValidation, setWorkflowValidation,
-    refreshWorkflows, persistWorkflow, checkWorkflow, selectedNode, selectedEdge: edges.find((edge) => edgeKey(edge) === selectedEdgeKey),
+    refreshWorkflows, persistWorkflow, checkWorkflow, loadWorkflow, applyPlannedWorkflow, selectedNode, selectedEdge: edges.find((edge) => edgeKey(edge) === selectedEdgeKey),
     workflowCanvas, updateSelectedNode, updateSelectedConfig, updateSelectedEdge, deleteSelectedEdge, deleteSelectedNode };
 }
