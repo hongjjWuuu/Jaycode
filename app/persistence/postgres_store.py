@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
@@ -36,6 +37,11 @@ def _postgres_timestamp(value: Any) -> Any:
     except ValueError:
         return value
     return parsed.replace(tzinfo=BEIJING_TZ) if parsed.tzinfo is None else parsed
+
+
+def _api_timestamp(value: Any) -> str:
+    """Render native PostgreSQL timestamps using the public API's string contract."""
+    return value.isoformat() if isinstance(value, datetime) else str(value)
 
 
 class PostgresTaskStore:
@@ -471,6 +477,8 @@ class PostgresTaskStore:
         item = dict(row)
         item["nodes"] = item.pop("nodes_json") or []
         item["edges"] = item.pop("edges_json") or []
+        item["created_at"] = _api_timestamp(item["created_at"])
+        item["updated_at"] = _api_timestamp(item["updated_at"])
         return item
 
     def list_workflows(self) -> list[dict[str, Any]]:

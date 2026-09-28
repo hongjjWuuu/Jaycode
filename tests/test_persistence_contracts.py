@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -8,7 +9,9 @@ import pytest
 from app.core.config import settings
 from app.persistence.contracts import DOMAIN_CONTRACTS
 from app.persistence.factory import PersistenceConfigurationError, get_persistence_stores
+from app.persistence.postgres_store import PostgresTaskStore
 from app.persistence.rag_store import PgVectorRagStore
+from app.schemas.studio import WorkflowSaveResponse
 
 
 def test_sqlite_bundle_exposes_every_declared_domain_and_contract_method(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -50,6 +53,26 @@ def test_postgres_factory_requires_database_url(monkeypatch: pytest.MonkeyPatch)
 def test_pgvector_rag_preserves_public_embedding_contract() -> None:
     for method in ("source", "embed_documents", "embed_query"):
         assert callable(getattr(PgVectorRagStore, method, None))
+
+
+def test_postgres_workflow_timestamps_match_the_api_response_contract() -> None:
+    timestamp = datetime(2026, 9, 29, 10, 30, tzinfo=UTC)
+    workflow = PostgresTaskStore._workflow_dict(
+        {
+            "workflow_id": "wf_contract",
+            "name": "Contract workflow",
+            "description": None,
+            "nodes_json": [],
+            "edges_json": [],
+            "created_at": timestamp,
+            "updated_at": timestamp,
+        }
+    )
+
+    response = WorkflowSaveResponse(workflow=workflow)
+
+    assert response.workflow.created_at == timestamp.isoformat()
+    assert response.workflow.updated_at == timestamp.isoformat()
 
 
 def test_production_modules_do_not_import_global_store_singletons() -> None:
