@@ -1,11 +1,21 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import type { DragEvent, PointerEvent } from 'react';
-import { listWorkflows, saveWorkflow, updateWorkflow, validateWorkflow } from '../services/workflows';
+import { deleteWorkflow as deleteSavedWorkflow, listWorkflows, saveWorkflow, updateWorkflow, validateWorkflow } from '../services/workflows';
 import type { AgentEvent, NodeStatus, WorkflowEdge, WorkflowNode, WorkflowRecord, WorkflowValidation } from '../types';
 import type { WorkflowCanvasProps } from '../components/workflow/WorkflowCanvas';
 
 const dragPayloadMime = 'application/jaycode-node';
 const edgeKey = (edge: WorkflowEdge) => `${edge.source}:${edge.target}:${edge.condition ?? 'always'}:${edge.value ?? ''}:${edge.source_path ?? ''}`;
+const nodeTemplates: Record<string, Pick<WorkflowNode, 'type' | 'name' | 'config'>> = {
+  planner: { type: 'planner', name: 'Planner', config: {} },
+  agent: { type: 'agent', name: 'Project Agent', config: { agent_type: 'project_analyzer', max_files: 100 } },
+  human_review: { type: 'human_review', name: 'Human Review', config: { require_comment: false } },
+  reporter: { type: 'reporter', name: 'Reporter', config: {} },
+  rag: { type: 'rag', name: 'Knowledge Search', config: { collection: 'project-memory', top_k: 5 } },
+  mcp_tool: { type: 'mcp_tool', name: 'MCP Tool', config: { tool_name: 'filesystem.list', agent_code: 'workflow_runner' } },
+  skill: { type: 'skill', name: 'Skill', config: { skill_code: 'code.review', agent_code: 'workflow_runner', input: {} } },
+  supervisor: { type: 'supervisor', name: 'Supervisor', config: {} },
+};
 
 export function useWorkflowEditor(initialNodes: WorkflowNode[], initialEdges: WorkflowEdge[], events: AgentEvent[] = []) {
   const [workflowId, setWorkflowId] = useState('');
@@ -63,6 +73,36 @@ export function useWorkflowEditor(initialNodes: WorkflowNode[], initialEdges: Wo
     setWorkflowName('Planner Generated Workflow');
     setWorkflowDescription('Generated from task goal by Planner mode.');
   }, []);
+  const createWorkflow = useCallback(() => {
+    setWorkflowId('');
+    setWorkflowName('未命名 Workflow');
+    setWorkflowDescription('');
+    setNodes([]);
+    setEdges([]);
+    setSelectedNodeId('');
+    setSelectedEdgeKey('');
+    setConnectFrom(null);
+    setWorkflowValidation(null);
+  }, []);
+  const addNode = useCallback((type: string) => {
+    const template = nodeTemplates[type];
+    if (!template) return;
+    const id = `${type}_${Date.now()}`;
+    setNodes((previous) => {
+      const index = previous.length;
+      const node = { ...template, id, x: 64 + (index % 4) * 228, y: 92 + Math.floor(index / 4) * 138 };
+      if (previous.length) setEdges((current) => [...current, { source: previous[previous.length - 1].id, target: id }]);
+      return [...previous, node];
+    });
+    setSelectedNodeId(id);
+    setSelectedEdgeKey('');
+  }, []);
+  const deleteWorkflow = useCallback(async (id: string) => {
+    const result = await deleteSavedWorkflow(id);
+    if (workflowId === id) createWorkflow();
+    await refreshWorkflows();
+    return result;
+  }, [createWorkflow, refreshWorkflows, workflowId]);
 
   const handleDrop = useCallback((event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -109,6 +149,6 @@ export function useWorkflowEditor(initialNodes: WorkflowNode[], initialEdges: Wo
   return { workflowId, setWorkflowId, workflowName, setWorkflowName, workflowDescription, setWorkflowDescription,
     savedWorkflows, setSavedWorkflows, nodes, setNodes, edges, setEdges, selectedNodeId, setSelectedNodeId,
     selectedEdgeKey, setSelectedEdgeKey, connectFrom, setConnectFrom, workflowValidation, setWorkflowValidation,
-    refreshWorkflows, persistWorkflow, checkWorkflow, loadWorkflow, applyPlannedWorkflow, selectedNode, selectedEdge: edges.find((edge) => edgeKey(edge) === selectedEdgeKey),
+    refreshWorkflows, persistWorkflow, checkWorkflow, loadWorkflow, applyPlannedWorkflow, createWorkflow, addNode, deleteWorkflow, selectedNode, selectedEdge: edges.find((edge) => edgeKey(edge) === selectedEdgeKey),
     workflowCanvas, updateSelectedNode, updateSelectedConfig, updateSelectedEdge, deleteSelectedEdge, deleteSelectedNode };
 }

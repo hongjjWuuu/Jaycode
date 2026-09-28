@@ -496,6 +496,10 @@ class PostgresTaskStore:
             ).fetchone()
         return self._workflow_dict(row) if row else None
 
+    def delete_workflow(self, workflow_id: str) -> bool:
+        with self.connection() as conn:
+            return bool(conn.execute("DELETE FROM workflow_definition WHERE workflow_id=%s", (workflow_id,)).rowcount)
+
     def record_review_action(
         self, task_id: str, action: str, comment: str | None = None, actor_id: str = "system-agent"
     ) -> dict[str, Any]:

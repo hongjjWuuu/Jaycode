@@ -14,19 +14,36 @@ const nodeConfig = { node: undefined, approvals: [], onNodeChange: vi.fn(), onCo
 const edgeConfig = { edge: undefined, nodes: [], onChange: vi.fn(), onDelete: vi.fn() };
 
 function renderPage(overrides: Partial<React.ComponentProps<typeof WorkflowPage>> = {}) {
-  return render(<WorkflowPage name="默认流程" description="描述" validation={null} workflows={[{ workflow_id: 'wf-1', name: '已保存流程', description: '', nodes: [], edges: [], created_at: '', updated_at: '' }]} canvas={canvas} nodeConfig={nodeConfig} edgeConfig={edgeConfig} onNameChange={vi.fn()} onDescriptionChange={vi.fn()} onSave={vi.fn()} onValidate={vi.fn()} onLoad={vi.fn()} onRefresh={vi.fn()} {...overrides} />);
+  return render(<WorkflowPage name="默认流程" description="描述" validation={null} workflows={[{ workflow_id: 'wf-1', name: '已保存流程', description: '', nodes: [], edges: [], created_at: '', updated_at: '' }]} canvas={canvas} nodeConfig={nodeConfig} edgeConfig={edgeConfig} onNameChange={vi.fn()} onDescriptionChange={vi.fn()} onNew={vi.fn()} onAddNode={vi.fn()} onSave={vi.fn()} onValidate={vi.fn()} onLoad={vi.fn()} onDelete={vi.fn()} onRefresh={vi.fn()} {...overrides} />);
 }
 
 describe('WorkflowPage', () => {
   it('composes the canvas and configuration components while invoking editor callbacks', () => {
-    const onSave = vi.fn(); const onValidate = vi.fn(); const onLoad = vi.fn();
-    renderPage({ onSave, onValidate, onLoad });
+    const onSave = vi.fn(); const onValidate = vi.fn(); const onLoad = vi.fn(); const onNew = vi.fn(); const onAddNode = vi.fn();
+    renderPage({ onSave, onValidate, onLoad, onNew, onAddNode });
     expect(document.querySelector('.workflow-canvas')).toBeTruthy();
     expect(screen.getByText('选择一个流程节点后配置参数。')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '保存 Workflow' }));
     fireEvent.click(screen.getByRole('button', { name: '校验 Workflow' }));
-    fireEvent.click(screen.getByRole('button', { name: '已保存流程' }));
-    expect(onSave).toHaveBeenCalledOnce(); expect(onValidate).toHaveBeenCalledOnce(); expect(onLoad).toHaveBeenCalledWith(expect.objectContaining({ workflow_id: 'wf-1' }));
+    fireEvent.click(screen.getByRole('button', { name: '新建画布流程' }));
+    fireEvent.click(screen.getByRole('button', { name: '规划' }));
+    fireEvent.click(screen.getByRole('button', { name: /^已保存流程/ }));
+    expect(onSave).toHaveBeenCalledOnce(); expect(onValidate).toHaveBeenCalledOnce(); expect(onNew).toHaveBeenCalledOnce(); expect(onAddNode).toHaveBeenCalledWith('planner'); expect(onLoad).toHaveBeenCalledWith(expect.objectContaining({ workflow_id: 'wf-1' }));
+  });
+
+  it('presents numeric saved workflow names as readable cards', () => {
+    renderPage({ workflows: [{ workflow_id: 'wf-2', name: '2', description: '项目分析', nodes: [{ id: 'plan', type: 'planner', name: 'Planner', x: 0, y: 0, config: {} }], edges: [], created_at: '', updated_at: '' }] });
+    expect(screen.getByText('流程 2')).toBeTruthy();
+    expect(screen.getByText('1 个节点 · 0 条连线')).toBeTruthy();
+  });
+
+  it('confirms before deleting a saved workflow', () => {
+    const onDelete = vi.fn();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    renderPage({ onDelete });
+    fireEvent.click(screen.getByRole('button', { name: '删除 已保存流程' }));
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(onDelete).toHaveBeenCalledWith('wf-1');
   });
 
   it('shows validation output and refreshes stored workflows', () => {

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { listTasks, runTaskStream } from './tasks';
 import { queryKnowledge } from './rag';
 import { createTaskLearningPlan } from './learning';
-import { saveWorkflow } from './workflows';
+import { deleteWorkflow, saveWorkflow } from './workflows';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -31,5 +31,11 @@ describe('core domain services', () => {
     await saveWorkflow({ name: 'Flow', nodes: [], edges: [] });
     expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/tasks/task%201/learning-plan');
     expect(fetchMock.mock.calls[1][0]).toBe('/api/v1/workflows');
+  });
+
+  it('deletes a saved workflow using its encoded identifier', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ deleted: true }), { status: 200 }));
+    await expect(deleteWorkflow('workflow / 1')).resolves.toEqual({ deleted: true });
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/workflows/workflow%20%2F%201', { method: 'DELETE' });
   });
 });

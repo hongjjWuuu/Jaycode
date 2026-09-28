@@ -5842,6 +5842,98 @@ textarea {
   min-height: 0;
 }
 
+.workflow-node-palette {
+  display: grid;
+  gap: 7px;
+  padding: 11px;
+  border: 1px solid #dbe6ef;
+  border-radius: 9px;
+  background: #f8fbfd;
+}
+
+.workflow-node-palette > strong {
+  color: #253349;
+  font-size: 13px;
+}
+
+.workflow-node-palette > span {
+  color: #718096;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.workflow-node-palette > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.workflow-node-palette .secondary {
+  height: 30px;
+  padding: 0 7px;
+  font-size: 11px;
+}
+
+.saved-workflow-list {
+  display: grid;
+  gap: 8px;
+  padding: 0 14px 14px;
+}
+
+.saved-workflow-card {
+  position: relative;
+  margin: 0;
+  width: 100%;
+}
+
+.saved-workflow-load {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 10px 42px 10px 11px;
+  border: 1px solid #d7e3ec;
+  border-radius: 9px;
+  background: #fbfdff;
+  color: #31445b;
+  text-align: left;
+}
+
+.saved-workflow-load:hover {
+  border-color: #78aabd;
+  background: #f0f8fa;
+}
+
+.saved-workflow-load strong {
+  color: #1e4057;
+  font-size: 13px;
+}
+
+.saved-workflow-load span,
+.saved-workflow-load time {
+  overflow: hidden;
+  color: #66788d;
+  font-size: 11px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.saved-workflow-load small {
+  color: #33708a;
+  font-size: 11px;
+}
+
+.saved-workflow-delete {
+  position: absolute;
+  top: 9px;
+  right: 8px;
+  width: 27px;
+  height: 27px;
+  color: #a34f4f;
+  border-color: #edcdcd;
+  background: #fff8f8;
+}
+
 .liquid-glass-defs {
   position: absolute;
   width: 0;

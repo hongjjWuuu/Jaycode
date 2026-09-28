@@ -980,6 +980,10 @@ class SQLiteTaskStore:
             ).fetchone()
         return self._workflow_row_to_dict(row) if row else None
 
+    def delete_workflow(self, workflow_id: str) -> bool:
+        with self._connect() as conn:
+            return bool(conn.execute("DELETE FROM workflow_definition WHERE workflow_id = ?", (workflow_id,)).rowcount)
+
     def record_review_action(self, task_id: str, action: str, comment: str | None = None) -> dict[str, Any]:
         created_at = utc_now_iso()
         with self._connect() as conn:

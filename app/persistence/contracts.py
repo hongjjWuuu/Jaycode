@@ -22,6 +22,7 @@ class WorkflowStore(Protocol):
     def save_workflow(self, workflow_id: str, name: str, description: str, nodes: list[dict[str, Any]], edges: list[dict[str, Any]]) -> dict[str, Any]: ...
     def list_workflows(self) -> list[dict[str, Any]]: ...
     def get_workflow(self, workflow_id: str) -> dict[str, Any] | None: ...
+    def delete_workflow(self, workflow_id: str) -> bool: ...
 
 
 class ReviewStore(Protocol):
@@ -93,7 +94,7 @@ class DomainContract:
 
 DOMAIN_CONTRACTS: dict[str, DomainContract] = {
     "task": DomainContract(("agent_task", "agent_task_event", "agent_task_artifact", "agent_worker"), ("create_task", "update_task", "get_task", "list_tasks", "get_task_by_idempotency_key", "get_task_input", "claim_next_task", "claim_task", "heartbeat_task", "recover_expired_tasks", "recover_expired_task_ids", "cancel_task", "is_task_cancelled", "is_task_failed", "append_event", "get_events", "get_events_after", "save_artifact", "get_artifacts", "save_task_bundle", "queue_task_resume"), "supported"),
-    "workflow": DomainContract(("workflow_definition",), ("save_workflow", "list_workflows", "get_workflow"), "supported"),
+    "workflow": DomainContract(("workflow_definition",), ("save_workflow", "list_workflows", "get_workflow", "delete_workflow"), "supported"),
     "review": DomainContract(("human_review_action", "agent_task", "agent_task_event", "agent_task_artifact"), ("record_review_action", "apply_review_transition"), "supported"),
     "skill": DomainContract(("skill_plugin", "skill_registry", "skill_version_snapshot", "skill_approval", "skill_execution_log"), ("seed_builtin_skills", "list_skill_plugins", "list_skills", "get_skill", "update_skill_enabled", "uninstall_skill_plugin", "set_skill_approval", "get_skill_approval", "list_skill_approvals", "save_skill_execution_log", "list_skill_execution_logs", "list_skill_versions", "rollback_skill_version"), "supported"),
     "mcp": DomainContract(("mcp_server_config", "mcp_tool_registry", "mcp_tool_approval", "mcp_tool_call_log"), ("save_mcp_server", "list_mcp_servers", "get_mcp_server", "update_mcp_server_status", "upsert_mcp_tool", "prune_mcp_tools", "list_mcp_tools", "get_mcp_tool", "update_mcp_tool_enabled", "set_mcp_tool_approval", "get_mcp_tool_approval", "save_mcp_call_log", "list_mcp_call_logs"), "supported"),

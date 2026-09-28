@@ -866,6 +866,14 @@ def update_workflow(workflow_id: str, request: WorkflowSaveRequest) -> WorkflowS
     audit_action("workflow_update", "workflow", workflow_id)
     return WorkflowSaveResponse(workflow=workflow)
 
+
+@router.delete("/workflows/{workflow_id}", tags=["Workflow Runner"])
+def delete_workflow(workflow_id: str) -> dict[str, bool]:
+    if not get_persistence_stores().workflow.delete_workflow(workflow_id):
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    audit_action("workflow_delete", "workflow", workflow_id)
+    return {"deleted": True}
+
 @router.post("/agents/collaborate", response_model=TaskRunResponse, tags=["Multi-Agent Collaboration"])
 def run_collaboration(request: CollaborationRequest) -> TaskRunResponse:
     """Submit legacy collaboration requests through the durable task queue."""

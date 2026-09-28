@@ -5,7 +5,7 @@ import { RunPage } from './RunPage';
 afterEach(() => cleanup());
 
 function renderPage(overrides: Partial<React.ComponentProps<typeof RunPage>> = {}) {
-  return render(<RunPage goal="分析项目" projectPath="." maxFiles={100} requireReview running={false} submitLabel="开始执行" error={null} events={[]} latestTaskId="" latestStatus="idle" workflowName="默认流程" taskNeedsReview={false} reviewComment="" resumeSnapshots={[]} selectedEvent={null} toolCalls={[]} agentOutputs={[]} onGoalChange={vi.fn()} onProjectPathChange={vi.fn()} onMaxFilesChange={vi.fn()} onRequireReviewChange={vi.fn()} onSubmit={vi.fn((event) => event.preventDefault())} onReviewCommentChange={vi.fn()} onReview={vi.fn()} onReviewAction={vi.fn()} {...overrides} />);
+  return render(<RunPage goal="分析项目" projectPath="." maxFiles={100} requireReview running={false} submitLabel="开始执行" error={null} events={[]} latestTaskId="" latestStatus="idle" workflowName="默认流程" workflowId="" workflows={[]} taskNeedsReview={false} reviewComment="" resumeSnapshots={[]} selectedEvent={null} toolCalls={[]} agentOutputs={[]} onGoalChange={vi.fn()} onProjectPathChange={vi.fn()} onMaxFilesChange={vi.fn()} onRequireReviewChange={vi.fn()} onWorkflowSelect={vi.fn()} onWorkflowsRefresh={vi.fn()} onSubmit={vi.fn((event) => event.preventDefault())} onReviewCommentChange={vi.fn()} onReview={vi.fn()} onReviewAction={vi.fn()} {...overrides} />);
 }
 
 describe('RunPage', () => {
@@ -21,6 +21,16 @@ describe('RunPage', () => {
     renderPage({ running: true, error: new Error('任务提交失败') });
     expect(screen.getByRole('button', { name: '执行中...' })).toBeDisabled();
     expect(screen.getByRole('alert')).toHaveTextContent('任务提交失败');
+  });
+
+  it('loads a saved workflow selection and lets the user refresh the list', () => {
+    const onWorkflowSelect = vi.fn();
+    const onWorkflowsRefresh = vi.fn();
+    renderPage({ workflows: [{ workflow_id: 'wf_saved', name: '项目分析审核流', description: '', nodes: [], edges: [], created_at: '', updated_at: '' }], onWorkflowSelect, onWorkflowsRefresh });
+    fireEvent.change(screen.getByLabelText('已保存 Workflow'), { target: { value: 'wf_saved' } });
+    fireEvent.click(screen.getByRole('button', { name: '刷新已保存流程' }));
+    expect(onWorkflowSelect).toHaveBeenCalledWith('wf_saved');
+    expect(onWorkflowsRefresh).toHaveBeenCalledOnce();
   });
 
   it('owns review, resume, event detail, and output interactions', () => {

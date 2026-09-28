@@ -47,6 +47,9 @@ def test_shared_core_persistence_contract(task_store) -> None:
     workflow = task_store.save_workflow(workflow_id, "Cross contract", "shared", [{"id": "start"}], [])
     assert workflow["workflow_id"] == workflow_id
     assert task_store.get_workflow(workflow_id)["nodes"] == [{"id": "start"}]
+    assert task_store.delete_workflow(workflow_id) is True
+    assert task_store.get_workflow(workflow_id) is None
+    assert task_store.delete_workflow(workflow_id) is False
 
     audit = task_store.save_security_audit(
         {
