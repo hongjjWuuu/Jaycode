@@ -2,7 +2,7 @@
 
 > 正式运行使用 PostgreSQL `jayagent_studio`（含 pgvector）。`data/dev_agent_studio.db` 仅是迁移历史和兼容依据，不能作为日常服务的写入目标。
 
-## 每天启动：只做这三步
+## 启动：只做这三步
 
 日常使用不需要重新迁移数据库、重建 Python 环境或重新安装前端依赖。API 和 Worker 也不必 24 小时运行；需要使用工作台时再启动即可。
 

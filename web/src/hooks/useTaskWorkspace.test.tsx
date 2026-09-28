@@ -45,7 +45,9 @@ describe('useTaskWorkspace', () => {
 
   it('restores task presentation and resume snapshots after review', async () => {
     const { result } = renderHook(() => useTaskWorkspace());
-    await act(async () => { await result.current.submitReview('task-1', 'approve', 'looks good'); });
+    await act(async () => { await result.current.restoreTaskContext('task-1'); });
+    act(() => { result.current.setReviewComment('looks good'); });
+    await act(async () => { await result.current.submitReview('approve'); });
 
     expect(mocks.reviewTask).toHaveBeenCalledWith('task-1', 'approve', 'looks good');
     expect(result.current.selectedTaskId).toBe('task-1');

@@ -67,7 +67,7 @@ def test_markdown_local_links_resolve() -> None:
 
 
 def test_frontend_default_project_path_is_portable() -> None:
-    source = (ROOT / "web/src/pages/WorkspaceRuntime.tsx").read_text(encoding="utf-8")
+    source = (ROOT / "web/src/hooks/useTaskWorkspace.ts").read_text(encoding="utf-8")
     assert "const defaultProjectPath = '.';" in source
 
 
@@ -85,3 +85,14 @@ def test_workspace_runtime_stays_service_free_and_delegates_task_lifecycle() -> 
     assert "getTaskDetail" not in source
     assert "getTaskEvents" not in source
     assert "consumeTaskPayload" not in source
+
+
+def test_workspace_composition_is_a_small_service_free_shell() -> None:
+    composition = (ROOT / "web/src/pages/WorkspaceComposition.tsx").read_text(encoding="utf-8")
+    coordinator = (ROOT / "web/src/hooks/useWorkspaceCoordinator.ts").read_text(encoding="utf-8")
+    assert len(composition.splitlines()) <= 400
+    assert "../services" not in composition
+    assert "useState" not in composition
+    assert "useEffect" not in composition
+    assert "useMemo" not in composition
+    assert "../services" not in coordinator

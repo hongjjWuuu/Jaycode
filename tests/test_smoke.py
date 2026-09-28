@@ -355,7 +355,7 @@ def test_postgres_store_factory_fails_closed_instead_of_mixing_sqlite(monkeypatc
     from app.persistence.factory import get_persistence_stores
 
     monkeypatch.setattr(settings, "jaycode_persistence_store", "postgres")
-    monkeypatch.setattr(settings, "database_url", "postgresql://localhost/jaycode")
+    monkeypatch.setattr(settings, "database_url", "postgresql://localhost/jaycode?connect_timeout=1")
     monkeypatch.setattr(settings, "pgvector_database_url", "")
     get_persistence_stores.cache_clear()
     try:

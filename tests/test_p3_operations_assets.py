@@ -30,7 +30,7 @@ def test_runtime_documents_and_template_keep_one_operating_contract() -> None:
     assert "不要同时使用两种 Worker 模式" in startup
     assert "先冻结 PostgreSQL 写入" in operations
     assert "不能通过修改 `.env` 直接回退" in operations
-    assert "postgresql://postgres:" not in "\n".join((template, readme, startup, operations))
+    assert "postgresql://postgres:" not in f"{template}\n{readme}\n{startup}\n{operations}"
 
 
 def test_backup_and_restore_scripts_enforce_their_safety_guards() -> None:
