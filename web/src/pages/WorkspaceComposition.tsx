@@ -25,10 +25,10 @@ const navItems: Array<{ view: ViewKey; label: string; icon: typeof LayoutDashboa
   { view: 'benchmark', label: 'Bench', icon: Activity },
 ];
 const initialNodes: WorkflowNode[] = [
-  { id: 'plan', type: 'planner', name: 'Planner', x: 64, y: 92, config: {} },
-  { id: 'analyze', type: 'agent', name: 'Project Agent', x: 292, y: 92, config: { agent_type: 'project_analyzer', max_files: 100 } },
-  { id: 'review', type: 'human_review', name: 'Human Review', x: 520, y: 92, config: { require_comment: false } },
-  { id: 'report', type: 'reporter', name: 'Reporter', x: 748, y: 92, config: {} },
+  { id: 'plan', type: 'planner', name: '规划', x: 64, y: 92, config: {} },
+  { id: 'analyze', type: 'agent', name: '分析 Agent', x: 292, y: 92, config: { agent_type: 'project_analyzer', max_files: 100 } },
+  { id: 'review', type: 'human_review', name: '人工审核', x: 520, y: 92, config: { require_comment: false } },
+  { id: 'report', type: 'reporter', name: '报告', x: 748, y: 92, config: {} },
 ];
 const initialEdges: WorkflowEdge[] = [{ source: 'plan', target: 'analyze' }, { source: 'analyze', target: 'review' }, { source: 'review', target: 'report' }];
 

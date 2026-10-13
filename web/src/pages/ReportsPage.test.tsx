@@ -7,9 +7,10 @@ afterEach(() => cleanup());
 describe('ReportsPage', () => {
   it('switches report tabs and opens the knowledge workspace', () => {
     const onOpenKnowledge = vi.fn();
-    render(<ReportsPage finalReport="# 最终报告" mermaid="graph LR\nA --> B" nodes={[]} edges={[]} riskLevel="low" reviewRequired={false} nextActions={[]} suggestions={['补充测试']} suggestionRecords={[]} knowledgeDocumentCount={2} onOpenKnowledge={onOpenKnowledge} />);
+    render(<ReportsPage finalReport="# 最终报告" mermaid={'graph LR\nA --> B'} nodes={[]} edges={[]} riskLevel="low" reviewRequired={false} nextActions={[]} suggestions={['补充测试']} suggestionRecords={[]} knowledgeDocumentCount={2} onOpenKnowledge={onOpenKnowledge} />);
     fireEvent.click(screen.getByRole('button', { name: 'Mermaid 图' }));
-    expect(document.querySelector('.mermaid-visual')).toHaveTextContent('graph LR\\nA --> B');
+    expect(document.querySelector('.mermaid-visual')).toHaveTextContent(/graph LR\s+A --> B/);
+    expect(screen.getAllByRole('img', { name: 'Workflow Mermaid 流程图' })).toHaveLength(2);
     fireEvent.click(screen.getByRole('button', { name: '打开追问知识库' }));
     expect(onOpenKnowledge).toHaveBeenCalledOnce();
   });

@@ -108,6 +108,16 @@ Harness Runtime 负责管理 Agent 任务的生命周期：
 - 处理失败和重试
 - 支持历史回放
 
+### 历史任务回收站
+
+已结束任务可移入回收站并在 30 天内恢复；运行中、暂停中和人工审核中的任务不可删除。部署环境应每日执行一次到期清理：
+
+```powershell
+python -m app.maintenance.purge_deleted_tasks
+```
+
+可将该命令配置为 Windows 任务计划程序或生产环境的 Cron/Job；它只永久清理已到期的回收站任务，不会删除 Workflow、项目文件或知识库数据。
+
 ## 技术栈
 
 ### 后端
@@ -216,7 +226,11 @@ Copy-Item .env.example .env
 OPENAI_API_KEY=<your-api-key>
 OPENAI_BASE_URL=<your-openai-compatible-base-url>
 JAYCODE_AGENT_LLM=<your-model-name>
+JAYCODE_WORKSPACE_ROOT=D:/projects
+JAYCODE_ALLOWED_PROJECT_ROOTS=D:/projects;E:/approved-source
 ```
+
+`JAYCODE_WORKSPACE_ROOT` 是运行页相对项目路径（包括 `.`）的唯一解析基准。`JAYCODE_ALLOWED_PROJECT_ROOTS` 是可访问项目目录白名单；Windows 使用分号分隔，Linux/macOS 使用冒号分隔。未配置白名单时仅允许工作区根目录及其子目录。
 
 不要将真实 `.env` 提交到 Git。
 

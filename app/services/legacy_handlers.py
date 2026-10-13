@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from app.agents.marketplace_tools import check_permission, list_tools
+from app.agents.project_tools import scan_project
 from app.benchmark_runner import (
     run_collaboration_benchmark,
     run_llm_benchmark,
@@ -16,6 +17,7 @@ from app.benchmark_runner import (
     run_rag_benchmark,
     run_workflow_benchmark,
 )
+from app.core.project_paths import ProjectPathError, resolve_project_path
 from app.core.security import audit_action, execution_auth_context
 from app.graphs.project_analyzer_graph import project_analyzer_graph
 from app.graphs.studio_graphs import (
@@ -68,6 +70,8 @@ from app.schemas.studio import (
     MemoryConfirmRequest,
     MemoryExtractRequest,
     MemoryRecordResponse,
+    ProjectResolveRequest,
+    ProjectResolveResponse,
     RagDocumentAclRequest,
     RagGoldCaseRequest,
     RagIngestRequest,
@@ -80,6 +84,8 @@ from app.schemas.studio import (
     ReviewActionResponse,
     TaskQuestionRequest,
     TaskQuestionResponse,
+    TaskBatchMutationRequest,
+    TaskBatchMutationResponse,
     TaskRunRequest,
     TaskRunResponse,
     ToolPermissionRequest,
@@ -91,6 +97,7 @@ from app.schemas.studio import (
     WorkflowValidateRequest,
     WorkflowValidateResponse,
 )
+from app.services.task_preflight import preflight_task
 from app.skills.executor import ensure_builtin_skills_seeded, execute_skill
 from app.skills.sandbox import python_skill_sandbox_status
 
@@ -101,12 +108,43 @@ from app.skills.sandbox import python_skill_sandbox_status
 
 router = APIRouter(prefix="/api/v1", tags=["Jaycode"])
 
+
+def _project_http_error(exc: ProjectPathError) -> HTTPException:
+    return HTTPException(
+        status_code=422,
+        detail={"error_code": exc.error_code, "message": exc.message, **exc.details},
+    )
+
+
+@router.get("/auth/context", tags=["Security"])
+def auth_context() -> dict[str, str]:
+    """Expose the request identity needed to disable unauthorized UI actions."""
+    context = execution_auth_context()
+    return {"actor_id": context.actor_id, "role": context.role}
+
+
+@router.post("/projects/resolve", response_model=ProjectResolveResponse, tags=["Project Analyzer"])
+def resolve_project(request: ProjectResolveRequest) -> ProjectResolveResponse:
+    try:
+        project = resolve_project_path(request.project_path)
+        scan = scan_project(project.resolved_path, request.max_files)
+    except ProjectPathError as exc:
+        raise _project_http_error(exc) from exc
+    return ProjectResolveResponse(
+        **project.model_dump(),
+        file_count=len(scan["files"]),
+        directory_count=len(scan["directories"]),
+    )
+
 # 直接调子图（简单能力）
 # 最简模式：前端请求 → 调图 → 返回
 @router.post("/projects/analyze", response_model=ProjectAnalyzeResponse, tags=["Project Analyzer"])
 def analyze_project(request: ProjectAnalyzeRequest) -> ProjectAnalyzeResponse:
     try:
-        result = project_analyzer_graph.invoke(request.model_dump())
+        project = resolve_project_path(request.project_path)
+        result = project_analyzer_graph.invoke({**request.model_dump(), "project_path": project.resolved_path})
+    except ProjectPathError as exc:
+        raise _project_http_error(exc) from exc
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -128,9 +166,15 @@ def analyze_project(request: ProjectAnalyzeRequest) -> ProjectAnalyzeResponse:
 
 @router.post("/projects/analyze/stream", tags=["Project Analyzer"])
 async def analyze_project_stream(request: ProjectAnalyzeRequest) -> StreamingResponse:
+    try:
+        project = resolve_project_path(request.project_path)
+    except ProjectPathError as exc:
+        raise _project_http_error(exc) from exc
+
     async def event_stream() -> AsyncIterator[str]:
         try:
-            async for event in project_analyzer_graph.astream_events(request.model_dump(), version="v2"):
+            payload = {**request.model_dump(), "project_path": project.resolved_path}
+            async for event in project_analyzer_graph.astream_events(payload, version="v2"):
                 payload = {
                     "type": "graph_event",
                     "event": event.get("event", "unknown"),
@@ -148,7 +192,10 @@ async def analyze_project_stream(request: ProjectAnalyzeRequest) -> StreamingRes
 @router.post("/code/review", response_model=CodeReviewResponse, tags=["Code Review Agent"])
 def review_code(request: CodeReviewRequest) -> CodeReviewResponse:
     try:
-        result = code_review_graph.invoke(request.model_dump())["result"]
+        project = resolve_project_path(request.project_path)
+        result = code_review_graph.invoke({**request.model_dump(), "project_path": project.resolved_path})["result"]
+    except ProjectPathError as exc:
+        raise _project_http_error(exc) from exc
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     scan = result["scan"]
@@ -167,7 +214,10 @@ def review_code(request: CodeReviewRequest) -> CodeReviewResponse:
 @router.post("/rag/process", response_model=RagProcessResponse, tags=["RAG Knowledge Agent"])
 def process_rag(request: RagProcessRequest) -> RagProcessResponse:
     try:
-        result = rag_process_graph.invoke(request.model_dump())["result"]
+        project = resolve_project_path(request.project_path)
+        result = rag_process_graph.invoke({**request.model_dump(), "project_path": project.resolved_path})["result"]
+    except ProjectPathError as exc:
+        raise _project_http_error(exc) from exc
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     scan = result["scan"]
@@ -184,8 +234,11 @@ def process_rag(request: RagProcessRequest) -> RagProcessResponse:
 @router.post("/rag/ingest", response_model=RagIngestResponse, tags=["RAG Knowledge Agent"])
 def ingest_rag(request: RagIngestRequest) -> RagIngestResponse:
     try:
-        result = rag_process_graph.invoke(request.model_dump())["result"]
+        project = resolve_project_path(request.project_path)
+        result = rag_process_graph.invoke({**request.model_dump(), "project_path": project.resolved_path})["result"]
         saved = get_persistence_stores().rag.ingest(request.collection, result["documents"], result["chunks"])
+    except ProjectPathError as exc:
+        raise _project_http_error(exc) from exc
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return RagIngestResponse(
@@ -787,25 +840,41 @@ def allow_check(request: ToolPermissionRequest) -> ToolPermissionResponse:
 @router.post("/mcp/filesystem/list", tags=["MCP Tool Marketplace"])
 def mcp_list_files(request: McpFileListRequest) -> dict[str, object]:
     tool_policy.require("project_analyzer", "file_scan")
-    return mcp_provider.list_files(request.root_path, request.max_files)
+    try:
+        project = resolve_project_path(request.root_path)
+    except ProjectPathError as exc:
+        raise _project_http_error(exc) from exc
+    return mcp_provider.list_files(project.resolved_path, request.max_files)
 
 
 @router.post("/mcp/filesystem/read", tags=["MCP Tool Marketplace"])
 def mcp_read_file(request: McpFileReadRequest) -> dict[str, object]:
     tool_policy.require("project_analyzer", "file_scan")
-    return mcp_provider.read_file(request.root_path, request.file_path, request.max_chars)
+    try:
+        project = resolve_project_path(request.root_path)
+    except ProjectPathError as exc:
+        raise _project_http_error(exc) from exc
+    return mcp_provider.read_file(project.resolved_path, request.file_path, request.max_chars)
 
 
 @router.post("/mcp/git/status", tags=["MCP Tool Marketplace"])
 def mcp_git_status(request: McpGitRequest) -> dict[str, object]:
     tool_policy.require("code_reviewer", "git_read")
-    return mcp_provider.git_status(request.repo_path)
+    try:
+        project = resolve_project_path(request.repo_path)
+    except ProjectPathError as exc:
+        raise _project_http_error(exc) from exc
+    return mcp_provider.git_status(project.resolved_path)
 
 
 @router.post("/mcp/git/log", tags=["MCP Tool Marketplace"])
 def mcp_git_log(request: McpGitRequest) -> dict[str, object]:
     tool_policy.require("code_reviewer", "git_read")
-    return mcp_provider.git_log(request.repo_path, request.limit)
+    try:
+        project = resolve_project_path(request.repo_path)
+    except ProjectPathError as exc:
+        raise _project_http_error(exc) from exc
+    return mcp_provider.git_log(project.resolved_path, request.limit)
 
 
 @router.post("/workflows/run", response_model=WorkflowRunResponse, tags=["Workflow Runner"])
@@ -877,17 +946,23 @@ def delete_workflow(workflow_id: str) -> dict[str, bool]:
 @router.post("/agents/collaborate", response_model=TaskRunResponse, tags=["Multi-Agent Collaboration"])
 def run_collaboration(request: CollaborationRequest) -> TaskRunResponse:
     """Submit legacy collaboration requests through the durable task queue."""
+    try:
+        project = resolve_project_path(request.project_path)
+    except ProjectPathError as exc:
+        raise _project_http_error(exc) from exc
     context = harness_runtime.create_context(
         goal=request.goal,
-        project_path=request.project_path,
+        project_path=project.resolved_path,
         variables={
             "execution_mode": "collaboration",
             "require_human_review": request.require_human_review,
+            "project_id": project.project_id,
             "_jaycode_runner": "collaboration",
         },
         input_state={
             "goal": request.goal,
-            "project_path": request.project_path,
+            "project_path": project.resolved_path,
+            "project_id": project.project_id,
             "require_human_review": request.require_human_review,
             "input_text": request.goal,
             "_jaycode_runner": "collaboration",
@@ -907,15 +982,24 @@ def run_collaboration(request: CollaborationRequest) -> TaskRunResponse:
 @router.post("/tasks/run", response_model=TaskRunResponse, tags=["Task Runtime"])
 def run_task(request: TaskRunRequest) -> TaskRunResponse:
     workflow_payload = _resolve_task_workflow(request)
+    try:
+        preflight = preflight_task(workflow_payload["nodes"], request.project_path)
+    except ProjectPathError as exc:
+        raise _project_http_error(exc) from exc
+    canonical_path = preflight.project.resolved_path if preflight.project else None
+    project_id = preflight.project.project_id if preflight.project else None
+    workflow_payload["project_path"] = canonical_path
+    workflow_payload["project_id"] = project_id
     context = harness_runtime.create_context(
         goal=request.goal,
-        project_path=request.project_path,
+        project_path=canonical_path,
         variables={
             "max_files": request.max_files,
             "require_human_review": request.require_human_review,
             "execution_mode": request.execution_mode,
             "workflow_id": request.workflow_id,
             "idempotency_key": request.idempotency_key,
+            "project_id": project_id,
             "_jaycode_runner": "workflow",
         },
         input_state=workflow_payload,
@@ -931,19 +1015,25 @@ async def run_task_stream(request: TaskRunRequest, http_request: Request) -> Str
 
 @router.post("/tasks/collaborate", response_model=TaskRunResponse, tags=["Task Runtime"])
 def run_collaboration_task_api(request: TaskRunRequest) -> TaskRunResponse:
+    try:
+        project = resolve_project_path(request.project_path)
+    except ProjectPathError as exc:
+        raise _project_http_error(exc) from exc
     context = harness_runtime.create_context(
         goal=request.goal,
-        project_path=request.project_path,
+        project_path=project.resolved_path,
         variables={
             "max_files": request.max_files,
             "require_human_review": request.require_human_review,
             "execution_mode": "collaboration",
             "idempotency_key": request.idempotency_key,
+            "project_id": project.project_id,
             "_jaycode_runner": "collaboration",
         },
         input_state={
             "goal": request.goal,
-            "project_path": request.project_path,
+            "project_path": project.resolved_path,
+            "project_id": project.project_id,
             "max_files": request.max_files,
             "require_human_review": request.require_human_review,
             "input_text": request.input_text or request.goal,
@@ -992,8 +1082,39 @@ async def _subscribe_task_events(task_id: str, request: Request) -> AsyncIterato
 
 
 @router.get("/tasks", tags=["Task Runtime"])
-def list_tasks(limit: int = 100, offset: int = 0) -> dict[str, object]:
-    return {"tasks": get_persistence_stores().task.list_tasks(limit=limit, offset=offset)}
+def list_tasks(limit: int = 100, offset: int = 0, include_deleted: bool = False) -> dict[str, object]:
+    store = get_persistence_stores().task
+    tasks = store.list_tasks(limit=limit, offset=offset, include_deleted=include_deleted)
+    for task in tasks:
+        task["project_id"] = store.get_task_input(str(task["task_id"])).get("project_id")
+    return {"tasks": tasks}
+
+
+def _task_batch_mutation_result(action: str, request: TaskBatchMutationRequest) -> TaskBatchMutationResponse:
+    context = execution_auth_context()
+    store = get_persistence_stores().task
+    is_admin = context.role in {"admin", "system-agent"}
+    result = (
+        store.soft_delete_tasks(request.task_ids, context.actor_id, is_admin)
+        if action == "delete"
+        else store.restore_deleted_tasks(request.task_ids, context.actor_id, is_admin)
+    )
+    affected = result["deleted"] if action == "delete" else result["restored"]
+    audit_action(
+        f"task_batch_{action}", "task", status="completed" if affected else "skipped",
+        metadata={"task_ids": request.task_ids, "affected_count": len(affected), "skipped": result["skipped"]},
+    )
+    return TaskBatchMutationResponse(**result)
+
+
+@router.post("/tasks/batch-delete", response_model=TaskBatchMutationResponse, tags=["Task Runtime"])
+def batch_delete_tasks(request: TaskBatchMutationRequest) -> TaskBatchMutationResponse:
+    return _task_batch_mutation_result("delete", request)
+
+
+@router.post("/tasks/batch-restore", response_model=TaskBatchMutationResponse, tags=["Task Runtime"])
+def batch_restore_tasks(request: TaskBatchMutationRequest) -> TaskBatchMutationResponse:
+    return _task_batch_mutation_result("restore", request)
 
 
 @router.get("/workers", tags=["Task Runtime"])
@@ -1006,6 +1127,8 @@ def get_task(task_id: str) -> dict[str, object]:
     task = get_persistence_stores().task.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+    task_input = get_persistence_stores().task.get_task_input(task_id)
+    task["project_id"] = task_input.get("project_id")
     return {"task": task, "artifacts": get_persistence_stores().task.get_artifacts(task_id)}
 
 
@@ -1313,7 +1436,7 @@ def _default_nodes_for_mode(mode: str) -> tuple[list[dict[str, object]], list[di
     elif mode == "knowledge":
         nodes = [
             {"id": "plan", "type": "planner", "name": "任务规划", "config": {}},
-            {"id": "knowledge", "type": "rag", "name": "知识检索", "config": {"collection": "default", "top_k": 5}},
+            {"id": "knowledge", "type": "rag", "name": "知识检索", "config": {"knowledge_scope": "legacy_shared", "collection": "project-memory", "top_k": 5}},
             {"id": "report", "type": "reporter", "name": "报告生成", "config": {}},
         ]
     else:

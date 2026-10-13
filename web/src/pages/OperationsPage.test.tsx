@@ -5,6 +5,17 @@ import { OperationsPage } from './OperationsPage';
 afterEach(() => vi.unstubAllGlobals());
 
 describe('OperationsPage', () => {
+  it('uses explicit regions for overview, alerts, queue, and task lists', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ readiness: {}, supervisor: {}, task_counts: {}, waiting_review: [], recent_failed: [], alerts: [] }), { status: 200 })));
+    const { container } = render(<OperationsPage onOpenTask={() => undefined} />);
+    await screen.findByText('当前没有匹配的告警。');
+    expect(container.querySelector('.operations-overview')).toBeTruthy();
+    expect(container.querySelector('.operations-alerts-panel')).toBeTruthy();
+    expect(container.querySelector('.operations-queue')).toBeTruthy();
+    expect(container.querySelector('.operations-review')).toBeTruthy();
+    expect(container.querySelector('.operations-failed')).toBeTruthy();
+  });
+
   it('shows filtered alerts and opens an operational task', async () => {
     const onOpenTask = vi.fn();
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({

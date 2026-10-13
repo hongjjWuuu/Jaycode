@@ -3,30 +3,32 @@ import type { DragEvent, PointerEvent } from 'react';
 import { deleteWorkflow as deleteSavedWorkflow, listWorkflows, saveWorkflow, updateWorkflow, validateWorkflow } from '../services/workflows';
 import type { AgentEvent, NodeStatus, WorkflowEdge, WorkflowNode, WorkflowRecord, WorkflowValidation } from '../types';
 import type { WorkflowCanvasProps } from '../components/workflow/WorkflowCanvas';
+import { workflowNodeLabel } from '../utils/workflowNodes';
 
 const dragPayloadMime = 'application/jaycode-node';
 const edgeKey = (edge: WorkflowEdge) => `${edge.source}:${edge.target}:${edge.condition ?? 'always'}:${edge.value ?? ''}:${edge.source_path ?? ''}`;
 const nodeTemplates: Record<string, Pick<WorkflowNode, 'type' | 'name' | 'config'>> = {
-  planner: { type: 'planner', name: 'Planner', config: {} },
-  agent: { type: 'agent', name: 'Project Agent', config: { agent_type: 'project_analyzer', max_files: 100 } },
-  human_review: { type: 'human_review', name: 'Human Review', config: { require_comment: false } },
-  reporter: { type: 'reporter', name: 'Reporter', config: {} },
-  rag: { type: 'rag', name: 'Knowledge Search', config: { collection: 'project-memory', top_k: 5 } },
-  mcp_tool: { type: 'mcp_tool', name: 'MCP Tool', config: { tool_name: 'filesystem.list', agent_code: 'workflow_runner' } },
-  skill: { type: 'skill', name: 'Skill', config: { skill_code: 'code.review', agent_code: 'workflow_runner', input: {} } },
-  supervisor: { type: 'supervisor', name: 'Supervisor', config: {} },
+  planner: { type: 'planner', name: workflowNodeLabel('planner'), config: {} },
+  agent: { type: 'agent', name: workflowNodeLabel('agent'), config: { agent_type: 'project_analyzer', max_files: 100 } },
+  human_review: { type: 'human_review', name: workflowNodeLabel('human_review'), config: { require_comment: false } },
+  reporter: { type: 'reporter', name: workflowNodeLabel('reporter'), config: {} },
+  rag: { type: 'rag', name: workflowNodeLabel('rag'), config: { knowledge_scope: 'project', top_k: 5 } },
+  mcp_tool: { type: 'mcp_tool', name: workflowNodeLabel('mcp_tool'), config: { tool_name: 'filesystem.list', agent_code: 'workflow_runner' } },
+  skill: { type: 'skill', name: workflowNodeLabel('skill'), config: { skill_code: 'code.review', agent_code: 'workflow_runner', input: {} } },
+  supervisor: { type: 'supervisor', name: workflowNodeLabel('supervisor'), config: {} },
 };
 
 export function useWorkflowEditor(initialNodes: WorkflowNode[], initialEdges: WorkflowEdge[], events: AgentEvent[] = []) {
   const [workflowId, setWorkflowId] = useState('');
   const [workflowName, setWorkflowName] = useState('项目分析审核流');
-  const [workflowDescription, setWorkflowDescription] = useState('Planner -> Agent -> Human Review -> Reporter');
+  const [workflowDescription, setWorkflowDescription] = useState('规划 -> 分析 Agent -> 人工审核 -> 报告');
   const [savedWorkflows, setSavedWorkflows] = useState<WorkflowRecord[]>([]);
   const [nodes, setNodes] = useState<WorkflowNode[]>(initialNodes);
   const [edges, setEdges] = useState<WorkflowEdge[]>(initialEdges);
   const [selectedNodeId, setSelectedNodeId] = useState('analyze');
   const [selectedEdgeKey, setSelectedEdgeKey] = useState('');
   const [connectFrom, setConnectFrom] = useState<string | null>(null);
+  const [isPanning, setIsPanning] = useState(false);
   const [workflowValidation, setWorkflowValidation] = useState<WorkflowValidation | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{ id: string; dx: number; dy: number } | null>(null);
@@ -122,18 +124,28 @@ export function useWorkflowEditor(initialNodes: WorkflowNode[], initialEdges: Wo
   }, []);
   const startCanvasPan = useCallback((event: PointerEvent<HTMLDivElement>) => {
     const target = event.target as HTMLElement;
-    if (target.closest('.flow-node') || target.closest('button')) return;
+    if (event.button !== 0 || target.closest('.flow-node') || target.closest('button')) return;
+    event.preventDefault();
     panRef.current = { x: event.clientX, y: event.clientY, scrollLeft: event.currentTarget.scrollLeft, scrollTop: event.currentTarget.scrollTop };
+    setIsPanning(true);
     event.currentTarget.setPointerCapture(event.pointerId);
   }, []);
   const onCanvasPointerMove = useCallback((event: PointerEvent<HTMLDivElement>) => {
     if (dragRef.current && canvasRef.current) {
-      const rect = canvasRef.current.getBoundingClientRect(); const { id, dx, dy } = dragRef.current;
-      setNodes((previous) => previous.map((node) => node.id === id ? { ...node, x: Math.max(8, Math.min(canvasSize.width - 180, canvasRef.current!.scrollLeft + event.clientX - rect.left - dx)), y: Math.max(8, Math.min(canvasSize.height - 78, canvasRef.current!.scrollTop + event.clientY - rect.top - dy)) } : node));
+      const canvas = canvasRef.current;
+      const rect = canvas.getBoundingClientRect(); const { id, dx, dy } = dragRef.current;
+      const edge = 64;
+      const horizontal = event.clientX < rect.left + edge ? event.clientX - (rect.left + edge) : event.clientX > rect.right - edge ? event.clientX - (rect.right - edge) : 0;
+      const vertical = event.clientY < rect.top + edge ? event.clientY - (rect.top + edge) : event.clientY > rect.bottom - edge ? event.clientY - (rect.bottom - edge) : 0;
+      if (horizontal || vertical) {
+        canvas.scrollLeft = Math.max(0, Math.min(canvas.scrollWidth - canvas.clientWidth, canvas.scrollLeft + horizontal * 0.22));
+        canvas.scrollTop = Math.max(0, Math.min(canvas.scrollHeight - canvas.clientHeight, canvas.scrollTop + vertical * 0.22));
+      }
+      setNodes((previous) => previous.map((node) => node.id === id ? { ...node, x: Math.max(8, canvas.scrollLeft + event.clientX - rect.left - dx), y: Math.max(8, canvas.scrollTop + event.clientY - rect.top - dy) } : node));
     }
     if (panRef.current && canvasRef.current) { canvasRef.current.scrollLeft = panRef.current.scrollLeft - (event.clientX - panRef.current.x); canvasRef.current.scrollTop = panRef.current.scrollTop - (event.clientY - panRef.current.y); }
   }, [canvasSize]);
-  const onEndPointer = useCallback(() => { dragRef.current = null; panRef.current = null; }, []);
+  const onEndPointer = useCallback(() => { dragRef.current = null; panRef.current = null; setIsPanning(false); }, []);
   const onToggleConnect = useCallback((nodeId: string) => {
     if (!connectFrom) { setConnectFrom(nodeId); return; }
     if (connectFrom !== nodeId) setEdges((previous) => previous.some((edge) => edge.source === connectFrom && edge.target === nodeId) ? previous : [...previous, { source: connectFrom, target: nodeId }]);
@@ -144,7 +156,7 @@ export function useWorkflowEditor(initialNodes: WorkflowNode[], initialEdges: Wo
   const updateSelectedEdge = useCallback((patch: Partial<WorkflowEdge>) => setEdges((previous) => previous.map((edge) => edgeKey(edge) === selectedEdgeKey ? { ...edge, ...patch } : edge)), [selectedEdgeKey]);
   const deleteSelectedEdge = useCallback(() => { setEdges((previous) => previous.filter((edge) => edgeKey(edge) !== selectedEdgeKey)); setSelectedEdgeKey(''); }, [selectedEdgeKey]);
   const deleteSelectedNode = useCallback(() => { setNodes((previous) => previous.filter((node) => node.id !== selectedNodeId)); setEdges((previous) => previous.filter((edge) => edge.source !== selectedNodeId && edge.target !== selectedNodeId)); setSelectedNodeId(''); setSelectedEdgeKey(''); }, [selectedNodeId]);
-  const workflowCanvas: WorkflowCanvasProps = { canvasRef, canvasSize, connectFrom, edges, nodes, nodeStatus, selectedNodeId, selectedEdgeKey, onCanvasPointerMove, onDrop: handleDrop, onEndPointer, onStartCanvasPan: startCanvasPan, onStartMove: startMove, onSelectEdge: (edge) => { setSelectedEdgeKey(edgeKey(edge)); setSelectedNodeId(''); }, onToggleConnect };
+  const workflowCanvas: WorkflowCanvasProps = { canvasRef, canvasSize, connectFrom, edges, nodes, nodeStatus, selectedNodeId, selectedEdgeKey, isPanning, onCanvasPointerMove, onDrop: handleDrop, onEndPointer, onStartCanvasPan: startCanvasPan, onStartMove: startMove, onSelectEdge: (edge) => { setSelectedEdgeKey(edgeKey(edge)); setSelectedNodeId(''); }, onToggleConnect };
 
   return { workflowId, setWorkflowId, workflowName, setWorkflowName, workflowDescription, setWorkflowDescription,
     savedWorkflows, setSavedWorkflows, nodes, setNodes, edges, setEdges, selectedNodeId, setSelectedNodeId,

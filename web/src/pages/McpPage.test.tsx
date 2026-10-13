@@ -24,6 +24,13 @@ function renderPage(overrides: Partial<React.ComponentProps<typeof McpPage>> = {
 }
 
 describe('McpPage', () => {
+  it('keeps configuration, tools, and logs in their dedicated panel regions', () => {
+    const { container } = renderPage();
+    expect(container.querySelector('.mcp-server-panel .mcp-form')).toBeTruthy();
+    expect(container.querySelector('.mcp-tool-panel .mcp-tool-list')).toBeTruthy();
+    expect(container.querySelector('.mcp-call-panel .mcp-log-list')).toBeTruthy();
+  });
+
   it('sends a parsed Server draft through the explicit callback', async () => {
     const onSaveServer = vi.fn().mockResolvedValue(undefined);
     renderPage({ onSaveServer });

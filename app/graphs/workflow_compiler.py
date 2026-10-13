@@ -7,6 +7,7 @@ from uuid import uuid4
 from langgraph.graph import END, StateGraph
 
 from app.agents.code_review_tools import review_single_file
+from app.core.project_paths import project_collection
 from app.graphs.project_analyzer_graph import project_analyzer_graph
 from app.graphs.studio_graphs import code_review_graph, learning_coach_graph, rag_process_graph
 from app.harness.events import utc_now_iso
@@ -35,6 +36,7 @@ class WorkflowState(TypedDict, total=False):
     input_text: str
     goal: str
     project_path: str
+    project_id: str
     max_files: int
     require_human_review: bool
     task_id: str
@@ -234,6 +236,8 @@ def run_task_workflow(input_state: dict[str, Any]) -> dict[str, Any]:
     result = run_compiled_workflow(workflow_name, input_text, nodes, edges, input_state)
     public_result = {
         "goal": input_state.get("goal") or input_text,
+        "project_path": input_state.get("project_path"),
+        "project_id": input_state.get("project_id"),
         "workflow_name": workflow_name,
         "final_report": result["final_report"],
         "mermaid": result["mermaid"],
@@ -904,11 +908,11 @@ def _execute_node(node: dict[str, Any], state: WorkflowState, outputs: dict[str,
         return {"plan": plan, "goal": goal}, {"agent_output": _agent_output(node, "planner", "\n".join(plan))}
 
     if node_type == "agent":
-        return _run_agent_node(node, config, goal, project_path, max_files)
+        return _run_agent_node(node, config, goal, project_path, max_files, state.get("project_id"))
 
     if node_type == "rag":
         # 查询知识库
-        collection = str(config.get("collection") or "default")
+        collection = _knowledge_collection(config, state.get("project_id"))
         limit = int(config.get("top_k") or 5)
         results = get_persistence_stores().rag.query(collection, goal, limit)
         text = f"Knowledge collection {collection} returned {len(results)} result(s)."
@@ -925,13 +929,13 @@ def _execute_node(node: dict[str, Any], state: WorkflowState, outputs: dict[str,
         if not skill_code:
             raise ValueError("skill_code is required for skill node")
         skill_input = {
+            **(config.get("input") if isinstance(config.get("input"), dict) else {}),
+            **_mapped_skill_input(config, state, outputs),
             "project_path": project_path,
             "root_path": project_path,
             "repo_path": project_path,
             "max_files": max_files,
             "goal": goal,
-            **(config.get("input") if isinstance(config.get("input"), dict) else {}),
-            **_mapped_skill_input(config, state, outputs),
         }
         result = execute_skill(
             skill_code,
@@ -987,6 +991,7 @@ def _run_agent_node(
     goal: str,
     project_path: str | None,
     max_files: int,
+    project_id: str | None = None,
 ) -> tuple[Any, dict[str, Any]]:
     agent_type = str(config.get("agent_type") or config.get("agent") or "project_analyzer")
     if agent_type == "project_analyzer":
@@ -1017,9 +1022,20 @@ def _run_agent_node(
         result = rag_process_graph.invoke({"project_path": project_path, "max_files": max_files})["result"]
         text = result.get("report_markdown") or f"RAG processing completed: {len(result.get('chunks', []))} chunks."
         should_ingest = bool(config.get("ingest", True))
-        collection = str(config.get("collection") or "project-memory")
+        collection = _knowledge_collection(config, project_id)
         if should_ingest:
-            saved = get_persistence_stores().rag.ingest(collection, result.get("documents", []), result.get("chunks", []))
+            chunks = result.get("chunks", [])
+            documents = result.get("documents", [])
+            if str(config.get("knowledge_scope") or "") == "project" and project_id:
+                chunks = [
+                    {**chunk, "metadata": {**(chunk.get("metadata") or {}), "project_id": project_id}}
+                    for chunk in chunks
+                ]
+                documents = [
+                    {**document, "metadata": {**(document.get("metadata") or {}), "project_id": project_id}}
+                    for document in documents
+                ]
+            saved = get_persistence_stores().rag.ingest(collection, documents, chunks)
             result = {
                 **result,
                 "ingest": {
@@ -1068,6 +1084,22 @@ def _run_agent_node(
     return result, extra
 
 
+def _knowledge_collection(config: dict[str, Any], project_id: str | None) -> str:
+    scope = str(config.get("knowledge_scope") or "").strip()
+    if scope == "project":
+        if not project_id:
+            raise ValueError("project_id is required for project knowledge")
+        return project_collection(project_id)
+    if scope == "legacy_shared":
+        return str(config.get("collection") or "project-memory")
+    if scope == "custom":
+        collection = str(config.get("collection") or "").strip()
+        if not collection:
+            raise ValueError("collection is required for custom knowledge scope")
+        return collection
+    raise ValueError("knowledge_scope is required for knowledge nodes")
+
+
 def _run_tool_node(
     node: dict[str, Any],
     config: dict[str, Any],
@@ -1075,7 +1107,7 @@ def _run_tool_node(
     max_files: int,
 ) -> tuple[Any, dict[str, Any]]:
     tool_name = str(config.get("tool_name") or "filesystem.list")
-    root_path = str(config.get("root_path") or project_path or ".")
+    root_path = str(project_path or "")
     arguments = {
         "root_path": root_path,
         "repo_path": root_path,
@@ -1085,6 +1117,11 @@ def _run_tool_node(
         "limit": int(config.get("limit") or 10),
         **(config.get("arguments") if isinstance(config.get("arguments"), dict) else {}),
     }
+    if tool_name.startswith(("filesystem.", "git.")):
+        if not project_path:
+            raise ValueError("project_path is required for filesystem and Git tools")
+        arguments["root_path"] = project_path
+        arguments["repo_path"] = project_path
     result = mcp_provider.call_tool(
         tool_name,
         arguments,
@@ -1165,6 +1202,11 @@ def _build_final_report(state: dict[str, Any]) -> str:
         "## Goal",
         "",
         str(goal),
+        "",
+        "## Run Target",
+        "",
+        f"- Project path: `{state.get('project_path')}`" if state.get("project_path") else "- No local project scanned.",
+        f"- Project ID: `{state.get('project_id')}`" if state.get("project_id") else "- Project ID: not applicable",
         "",
         "## Agent Outputs",
         "",

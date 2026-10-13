@@ -10,6 +10,13 @@ function renderPage(overrides: Partial<React.ComponentProps<typeof BenchmarkPage
 }
 
 describe('BenchmarkPage', () => {
+  it('keeps benchmark input, history, and result details in dedicated panels', () => {
+    const { container } = renderPage();
+    expect(container.querySelector('.benchmark-control .benchmark-form')).toBeTruthy();
+    expect(container.querySelector('.benchmark-history')).toBeTruthy();
+    expect(container.querySelector('.benchmark-results .benchmark-result-grid')).toBeTruthy();
+  });
+
   it('submits the selected benchmark payload through the Hook callback', async () => {
     const onRun = vi.fn().mockResolvedValue({ run_id: 'run-1' });
     renderPage({ onRun });

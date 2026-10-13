@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -7,6 +9,14 @@ class Settings(BaseSettings):
     app_env: str = "dev"
     max_scan_files: int = 800
     max_file_preview_chars: int = 4000
+    jaycode_workspace_root: str = Field(
+        default_factory=lambda: str(Path(__file__).resolve().parents[2]),
+        validation_alias="JAYCODE_WORKSPACE_ROOT",
+    )
+    jaycode_allowed_project_roots: str = Field(
+        default="",
+        validation_alias="JAYCODE_ALLOWED_PROJECT_ROOTS",
+    )
     jaycode_task_max_runtime_seconds: int = Field(default=900, validation_alias="JAYCODE_TASK_MAX_RUNTIME_SECONDS")
     jaycode_worker_supervisor_enabled: bool = Field(default=False, validation_alias="JAYCODE_WORKER_SUPERVISOR_ENABLED")
     jaycode_worker_supervisor_max_restarts: int = Field(default=5, validation_alias="JAYCODE_WORKER_SUPERVISOR_MAX_RESTARTS")

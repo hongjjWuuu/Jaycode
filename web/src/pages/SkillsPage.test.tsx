@@ -32,6 +32,14 @@ function renderPage(overrides: Partial<React.ComponentProps<typeof SkillsPage>> 
 }
 
 describe('SkillsPage', () => {
+  it('keeps long plugin, skill, detail, and log content in dedicated regions', () => {
+    const { container } = renderPage();
+    expect(container.querySelector('.skill-plugin-panel .skill-plugin-list')).toBeTruthy();
+    expect(container.querySelector('.skill-list-panel .skill-list')).toBeTruthy();
+    expect(container.querySelector('.skill-detail-panel .skill-detail')).toBeTruthy();
+    expect(container.querySelector('.skill-log-panel .skill-log-list')).toBeTruthy();
+  });
+
   it('passes the selected Skill to the explicit Workflow callback', () => {
     const onAddToWorkflow = vi.fn();
     renderPage({ onAddToWorkflow });

@@ -2,7 +2,7 @@ import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  listTasks: vi.fn(), getTaskDetail: vi.fn(), getTaskEvents: vi.fn(), reviewTask: vi.fn(),
+  listTasks: vi.fn(), getTaskAuthContext: vi.fn(), getTaskDetail: vi.fn(), getTaskEvents: vi.fn(), reviewTask: vi.fn(),
   runTaskStream: vi.fn(), runCollaborationTaskStream: vi.fn(), applyReviewAction: vi.fn(),
   askTask: vi.fn(), listProjectFiles: vi.fn(),
 }));
@@ -15,6 +15,7 @@ import { useTaskWorkspace } from './useTaskWorkspace';
 beforeEach(() => {
   vi.resetAllMocks();
   mocks.listTasks.mockResolvedValue([{ task_id: 'task-1', goal: 'review', status: 'waiting_review' }]);
+  mocks.getTaskAuthContext.mockResolvedValue({ actor_id: 'local-user', role: 'admin' });
   mocks.getTaskEvents.mockResolvedValue([{ type: 'node', task_id: 'task-1', status: 'completed', content: 'done' }]);
   mocks.getTaskDetail.mockResolvedValue({
     task: { task_id: 'task-1', final_report: 'stored report' },

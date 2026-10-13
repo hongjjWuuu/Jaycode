@@ -2438,8 +2438,62 @@ button {
 
 .history-list-panel {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto minmax(0, 1fr);
   overflow: hidden;
+}
+
+.history-title-actions,
+.history-selection-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.history-selection-toolbar {
+  min-height: 42px;
+  padding: 7px 10px;
+  border-bottom: 1px solid #e1e8ef;
+  color: #596b7d;
+  font-size: 13px;
+}
+
+.compact-button {
+  min-height: 30px;
+  padding: 4px 9px;
+  font-size: 13px;
+}
+
+.history-notice {
+  margin: 7px 10px 0;
+  color: #28744d;
+  font-size: 13px;
+}
+
+.history-task-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.history-task-row > input {
+  width: 16px;
+  height: 16px;
+  margin-left: 3px;
+}
+
+.history-task-row > button {
+  min-width: 0;
+}
+
+.history-task-row.active > button {
+  border-color: #2f6f9f;
+  background: #eef7fb;
+}
+
+.history-task-row > button:disabled {
+  cursor: default;
+  opacity: 1;
 }
 
 .report-preview-panel {
@@ -3390,7 +3444,7 @@ textarea:focus {
 .canvas-panel {
   min-height: 0;
   display: grid;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .workflow-canvas {
@@ -3403,6 +3457,26 @@ textarea:focus {
 
 .workflow-canvas:active {
   cursor: grabbing;
+}
+
+.workflow-canvas.panning {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.canvas-pan-hint {
+  position: absolute;
+  z-index: 3;
+  top: 10px;
+  left: 10px;
+  display: inline-flex;
+  pointer-events: none;
+  padding: 5px 8px;
+  border: 1px solid #d6e0e8;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.88);
+  color: #657386;
+  font-size: 11px;
 }
 
 .canvas-surface {
@@ -5874,6 +5948,26 @@ textarea {
   font-size: 11px;
 }
 
+.node-type-summary {
+  display: grid;
+  gap: 4px;
+  padding: 10px 11px;
+  border: 1px solid #cfe0ec;
+  border-radius: 8px;
+  background: #f5faff;
+}
+
+.node-type-summary strong {
+  color: #255a76;
+  font-size: 13px;
+}
+
+.node-type-summary span {
+  color: #697b8e;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 .saved-workflow-list {
   display: grid;
   gap: 8px;
@@ -5881,16 +5975,23 @@ textarea {
 }
 
 .saved-workflow-card {
-  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
   margin: 0;
   width: 100%;
+}
+
+.saved-workflow-card.delete-mode {
+  grid-template-columns: minmax(0, 1fr) 28px;
+  align-items: center;
 }
 
 .saved-workflow-load {
   display: grid;
   gap: 4px;
   width: 100%;
-  padding: 10px 42px 10px 11px;
+  padding: 10px 11px;
   border: 1px solid #d7e3ec;
   border-radius: 9px;
   background: #fbfdff;
@@ -5924,14 +6025,16 @@ textarea {
 }
 
 .saved-workflow-delete {
-  position: absolute;
-  top: 9px;
-  right: 8px;
-  width: 27px;
-  height: 27px;
+  width: 28px;
+  height: 28px;
   color: #a34f4f;
   border-color: #edcdcd;
   background: #fff8f8;
+}
+
+.saved-workflow-actions {
+  display: flex;
+  gap: 6px;
 }
 
 .liquid-glass-defs {
@@ -7300,4 +7403,316 @@ textarea[data-liquid-glass="ready"] {
 .canvas-surface {
   background-color: #fafafa !important;
   background-image: none !important;
+}
+
+/* Keep the workbench fixed while the canvas itself owns the vertical range.
+   A long flow must always expose a real scroll container under the pointer. */
+.workflow-page {
+  height: 100%;
+  min-height: 0;
+  align-items: stretch;
+}
+
+.workflow-page .workflow-sidebar,
+.workflow-page .config-panel {
+  max-height: calc(100vh - 100px);
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.workflow-page .canvas-panel {
+  height: calc(100vh - 100px);
+  max-height: calc(100vh - 100px);
+  min-height: 0;
+}
+
+.workflow-page .workflow-canvas {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: auto;
+}
+.project-path-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.project-path-row button { white-space: nowrap; }
+.project-requirement, .run-target-summary, .resolved-project { border: 1px solid #d8e3ec; border-radius: 10px; padding: 10px 12px; background: #f7fbfe; display: grid; gap: 4px; }
+.project-requirement.required { border-color: #f0cf8c; background: #fff9ec; }
+.project-requirement small, .run-target-summary span, .resolved-project span, .resolved-project small { color: #687b90; overflow-wrap: anywhere; }
+.resolved-project { grid-template-columns: auto minmax(0, 1fr); color: #23865f; }
+.resolved-project div { display: grid; gap: 3px; }
+.field-error, .run-disabled-reason { color: #b33b4b; margin: 0; }
+
+/* Reports keep every result reachable inside the fixed workbench. */
+.reports-page {
+  height: calc(100vh - 64px);
+  max-height: calc(100vh - 64px);
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(380px, 0.9fr);
+  grid-template-rows: minmax(0, 1fr) minmax(220px, 0.52fr);
+  gap: 14px;
+  padding: 14px;
+  overflow: hidden;
+  align-content: stretch;
+}
+
+.reports-page .report-tab-card {
+  grid-column: 1;
+  grid-row: 1 / 3;
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.reports-page .mermaid-card {
+  grid-column: 2;
+  grid-row: 1;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.reports-page .suggestions-card {
+  grid-column: 2;
+  grid-row: 2;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  overflow: hidden;
+}
+
+.reports-page .report-tab-card .markdown-view,
+.reports-page .report-tab-card .governance-view,
+.reports-page .mermaid-card .mermaid-visual {
+  min-height: 0;
+  overflow: auto;
+}
+
+.reports-page .suggestions-card .suggestion-list {
+  min-height: 0;
+  margin: 0;
+  overflow: auto;
+  padding: 12px 18px 12px 34px;
+}
+
+.reports-page .suggestions-card .knowledge-summary {
+  margin: 0 12px 12px;
+}
+
+.mermaid-visual {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.mermaid-visual svg {
+  min-width: 100%;
+  width: max-content;
+  min-height: 150px;
+}
+
+.mermaid-edge-label {
+  fill: #4e6477;
+  font-size: 11px;
+}
+
+.mermaid-source {
+  color: #66778a;
+  font-size: 12px;
+}
+
+.mermaid-source pre,
+.mermaid-error pre {
+  max-height: 180px;
+  overflow: auto;
+  padding: 10px;
+  border-radius: 6px;
+  background: #f6f8fa;
+  white-space: pre-wrap;
+}
+
+.mermaid-error {
+  color: #9b303b;
+}
+
+/* Page-level scrolling is the single owner for long workbench content.
+   Keep the shell and navigation fixed, but never compress multi-row tools. */
+.app-main > .page-boundary {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.page-boundary .page-grid,
+.page-boundary .reports-page {
+  height: auto;
+  min-height: 100%;
+  overflow: visible;
+  align-content: start;
+  padding: 18px;
+  padding-bottom: 40px;
+}
+
+.page-boundary .panel-title {
+  min-height: 52px;
+  padding: 0 18px;
+  font-size: 16px;
+}
+
+.page-boundary .panel {
+  overflow: visible;
+}
+
+.page-boundary .small-muted,
+.page-boundary .field-help,
+.page-boundary .empty-text,
+.page-boundary .timeline-row p,
+.page-boundary .skill-plugin-list span,
+.page-boundary .skill-list span,
+.page-boundary .mcp-tool-card p,
+.page-boundary .marketplace-card p {
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+/* Natural-height grids: the page scrolls instead of splitting the viewport
+   into fractions too small for forms, cards, and detailed task results. */
+.page-boundary .skills-page,
+.page-boundary .marketplace-page,
+.page-boundary .benchmark-page,
+.page-boundary .llm-page {
+  grid-template-rows: none;
+  align-items: start;
+}
+
+.page-boundary .skills-page .panel,
+.page-boundary .marketplace-page .panel,
+.page-boundary .benchmark-page .panel,
+.page-boundary .llm-page .panel,
+.page-boundary .mcp-page .panel,
+.page-boundary .operations-page .panel {
+  min-height: 0;
+  max-height: none;
+}
+
+.page-boundary .skill-plugin-panel,
+.page-boundary .skill-list-panel,
+.page-boundary .skill-detail-panel,
+.page-boundary .skill-approval-panel,
+.page-boundary .skill-execute-panel,
+.page-boundary .skill-log-panel,
+.page-boundary .marketplace-source-panel,
+.page-boundary .marketplace-result-panel,
+.page-boundary .marketplace-catalog-panel,
+.page-boundary .marketplace-preview-panel,
+.page-boundary .marketplace-history-panel,
+.page-boundary .llm-dashboard,
+.page-boundary .llm-trace-section,
+.page-boundary .llm-prompts,
+.page-boundary .benchmark-control,
+.page-boundary .benchmark-summary,
+.page-boundary .benchmark-history,
+.page-boundary .benchmark-results,
+.page-boundary .benchmark-gold {
+  min-height: 0;
+}
+
+.page-boundary .skill-plugin-panel,
+.page-boundary .skill-list-panel,
+.page-boundary .skill-detail-panel,
+.page-boundary .skill-approval-panel,
+.page-boundary .skill-execute-panel,
+.page-boundary .skill-log-panel,
+.page-boundary .marketplace-source-panel,
+.page-boundary .marketplace-result-panel,
+.page-boundary .marketplace-catalog-panel,
+.page-boundary .marketplace-preview-panel,
+.page-boundary .marketplace-history-panel,
+.page-boundary .llm-prompts {
+  display: block;
+}
+
+.page-boundary .skill-plugin-list,
+.page-boundary .skill-list,
+.page-boundary .skill-detail,
+.page-boundary .skill-approval-list,
+.page-boundary .skill-execute-output,
+.page-boundary .skill-log-list,
+.page-boundary .marketplace-card-list,
+.page-boundary .marketplace-install-list,
+.page-boundary .marketplace-preview,
+.page-boundary .usage-sections,
+.page-boundary .trace-list,
+.page-boundary .prompt-list,
+.page-boundary .prompt-lab,
+.page-boundary .benchmark-result-grid,
+.page-boundary .rag-gold-layout {
+  min-height: 0;
+  max-height: none;
+  overflow: visible;
+}
+
+.page-boundary .llm-prompts .prompt-list,
+.page-boundary .llm-prompts .prompt-lab {
+  margin: 14px;
+  border: 1px solid #e1e6ec;
+  border-radius: 8px;
+}
+
+.page-boundary .operations-page {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-areas:
+    "overview alerts"
+    "queue queue"
+    "review failed";
+  gap: 18px;
+}
+
+.page-boundary .operations-overview { grid-area: overview; }
+.page-boundary .operations-alerts-panel { grid-area: alerts; }
+.page-boundary .operations-queue { grid-area: queue; }
+.page-boundary .operations-review { grid-area: review; }
+.page-boundary .operations-failed { grid-area: failed; }
+
+.page-boundary .workflow-page .canvas-panel {
+  overflow: hidden;
+}
+
+/* Keep machine-sized payloads bounded without constraining normal page content. */
+.page-boundary .skill-json pre,
+.page-boundary .mcp-log-details pre,
+.page-boundary .trace-body pre,
+.page-boundary .mcp-result,
+.page-boundary .skill-result {
+  max-height: 420px;
+  overflow: auto;
+}
+
+@media (max-width: 1180px) {
+  .page-boundary .operations-page {
+    grid-template-columns: 1fr;
+    grid-template-areas: "overview" "alerts" "queue" "review" "failed";
+  }
+
+  .page-boundary .page-grid,
+  .page-boundary .reports-page {
+    padding: 14px;
+    padding-bottom: 28px;
+  }
+}
+
+@media (max-width: 1080px) {
+  .reports-page {
+    height: 100%;
+    max-height: none;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(480px, auto) minmax(300px, auto) minmax(260px, auto);
+    overflow-y: auto;
+  }
+
+  .reports-page .report-tab-card,
+  .reports-page .mermaid-card,
+  .reports-page .suggestions-card {
+    grid-column: 1;
+    grid-row: auto;
+  }
 }

@@ -1,12 +1,13 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
-  applyReviewAction, askTask, getTaskDetail, getTaskEvents, listTasks, reviewTask,
+  applyReviewAction, askTask, batchDeleteTasks, batchRestoreTasks, getTaskAuthContext, getTaskDetail, getTaskEvents, listTasks, reviewTask,
   runCollaborationTaskStream, runTaskStream, type TaskRunPayload,
 } from '../services/tasks';
 import { listProjectFiles } from '../services/projectFiles';
+import { resolveProject } from '../services/projects';
 import type {
   AgentEvent, AgentOutput, ExecutionMode, ResumeSnapshot, SuggestionRecord, TaskResultPayload,
-  TaskSummary, ToolCall,
+  ResolvedProject, TaskBatchMutationResult, TaskSummary, ToolCall,
 } from '../types';
 import {
   deriveAgentOutputs, deriveModules, deriveToolCalls, extractResumeSnapshots,
@@ -23,11 +24,13 @@ const emptyPresentation = (): TaskPresentation => ({
   finalReport: '', mermaid: '', suggestions: [], suggestionRecords: [], riskLevel: 'low',
   reviewRequired: false, nextActions: [], toolCalls: [], agentOutputs: [], resumeSnapshots: [],
 });
-const defaultProjectPath = '.';
+const defaultProjectPath = '';
 
 /** Owns task lifecycle and the Run/History presentation state. */
 export function useTaskWorkspace() {
   const [tasks, setTasks] = useState<TaskSummary[]>([]);
+  const [deletedTasks, setDeletedTasks] = useState<TaskSummary[]>([]);
+  const [taskActor, setTaskActor] = useState<{ actor_id: string; role: string } | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState('');
   const [events, setEvents] = useState<AgentEvent[]>([]);
   const [presentation, setPresentation] = useState<TaskPresentation>(emptyPresentation);
@@ -36,6 +39,9 @@ export function useTaskWorkspace() {
   const [executionMode, setExecutionMode] = useState<ExecutionMode>('workflow');
   const [goal, setGoal] = useState('分析这个项目并给出重构建议');
   const [projectPath, setProjectPath] = useState(defaultProjectPath);
+  const [resolvedProject, setResolvedProject] = useState<ResolvedProject | null>(null);
+  const [projectValidationStatus, setProjectValidationStatus] = useState<'idle' | 'validating' | 'valid' | 'invalid'>('idle');
+  const [projectValidationError, setProjectValidationError] = useState('');
   const [maxFiles, setMaxFiles] = useState(100);
   const [requireReview, setRequireReview] = useState(true);
   const [reviewComment, setReviewComment] = useState('');
@@ -52,7 +58,24 @@ export function useTaskWorkspace() {
   const taskNeedsReview = latestStatus === 'waiting_review' || tasks.find((task) => task.task_id === latestTaskId)?.status === 'waiting_review';
   const focusModules = useMemo(() => deriveModules(focusFiles), [focusFiles]);
 
-  const refreshTasks = useCallback(async () => setTasks(await listTasks()), []);
+  const refreshTasks = useCallback(async () => {
+    const [currentTasks, actor] = await Promise.all([listTasks(), getTaskAuthContext().catch(() => null)]);
+    setTasks(currentTasks); setTaskActor(actor);
+  }, []);
+  const refreshDeletedTasks = useCallback(async () => setDeletedTasks(await listTasks(true)), []);
+  const deleteTasks = useCallback(async (taskIds: string[]): Promise<TaskBatchMutationResult> => {
+    const result = await batchDeleteTasks(taskIds);
+    await Promise.all([refreshTasks(), refreshDeletedTasks()]);
+    if (result.deleted.some((item) => item.task_id === selectedTaskId)) {
+      setSelectedTaskId(''); setEvents([]); setPresentation(emptyPresentation()); setSelectedEvent(null);
+    }
+    return result;
+  }, [refreshDeletedTasks, refreshTasks, selectedTaskId]);
+  const restoreDeletedTasks = useCallback(async (taskIds: string[]): Promise<TaskBatchMutationResult> => {
+    const result = await batchRestoreTasks(taskIds);
+    await Promise.all([refreshTasks(), refreshDeletedTasks()]);
+    return result;
+  }, [refreshDeletedTasks, refreshTasks]);
   const applyResult = useCallback((result: Partial<TaskResultPayload>, snapshots: ResumeSnapshot[] = []) => {
     setPresentation({
       finalReport: result.final_report ?? '', mermaid: result.mermaid ?? '', suggestions: result.suggestions ?? [],
@@ -103,13 +126,22 @@ export function useTaskWorkspace() {
     catch (error) { setFocusError(error instanceof Error ? error.message : String(error)); }
     finally { setFocusLoading(false); }
   }, [maxFiles, projectPath]);
+  const changeProjectPath = useCallback((value: string) => {
+    setProjectPath(value); setResolvedProject(null); setProjectValidationStatus('idle'); setProjectValidationError('');
+  }, []);
+  const validateProject = useCallback(async () => {
+    if (!projectPath.trim()) { setResolvedProject(null); setProjectValidationStatus('invalid'); setProjectValidationError('请输入项目路径。'); throw new Error('请输入项目路径。'); }
+    setProjectValidationStatus('validating'); setProjectValidationError('');
+    try { const project = await resolveProject(projectPath, Math.min(2000, Math.max(1, maxFiles))); setResolvedProject(project); setProjectValidationStatus('valid'); return project; }
+    catch (error) { const message = error instanceof Error ? error.message : String(error); setResolvedProject(null); setProjectValidationStatus('invalid'); setProjectValidationError(message); throw error; }
+  }, [maxFiles, projectPath]);
 
   return {
-    tasks, selectedTaskId, events, ...presentation, running, runError, executionMode, goal, projectPath, maxFiles,
-    requireReview, reviewComment, selectedEvent, latestTaskId, latestStatus, taskNeedsReview, visibleToolCalls,
+    tasks, deletedTasks, taskActor, selectedTaskId, events, ...presentation, running, runError, executionMode, goal, projectPath, maxFiles,
+    resolvedProject, projectValidationStatus, projectValidationError, requireReview, reviewComment, selectedEvent, latestTaskId, latestStatus, taskNeedsReview, visibleToolCalls,
     visibleAgentOutputs, focusPicker: { open: focusPickerOpen, files: focusFiles, modules: focusModules, loading: focusLoading, error: focusError },
-    refreshTasks, runTask, restoreTaskContext, submitReview, recordReviewAction, askCurrentTask, openFocusPicker,
-    closeFocusPicker: () => setFocusPickerOpen(false), setRunError, setExecutionMode, setGoal, setProjectPath,
+    refreshTasks, refreshDeletedTasks, deleteTasks, restoreDeletedTasks, runTask, restoreTaskContext, submitReview, recordReviewAction, askCurrentTask, openFocusPicker,
+    closeFocusPicker: () => setFocusPickerOpen(false), setRunError, setExecutionMode, setGoal, setProjectPath: changeProjectPath, validateProject,
     setMaxFiles, setRequireReview, setReviewComment, setSelectedEvent,
   };
 }

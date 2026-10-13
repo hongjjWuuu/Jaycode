@@ -14,6 +14,14 @@ function renderPage(overrides: Partial<React.ComponentProps<typeof LlmPage>> = {
 }
 
 describe('LlmPage', () => {
+  it('keeps usage, traces, prompts, and editors in separate panel regions', () => {
+    const { container } = renderPage();
+    expect(container.querySelector('.llm-dashboard')).toBeTruthy();
+    expect(container.querySelector('.llm-trace-section .trace-list')).toBeTruthy();
+    expect(container.querySelector('.llm-prompts .prompt-list')).toBeTruthy();
+    expect(container.querySelector('.llm-prompts .prompt-lab')).toBeTruthy();
+  });
+
   it('activates a prompt through its explicit governance callback', async () => {
     const onActivatePrompt = vi.fn().mockResolvedValue(undefined);
     renderPage({ onActivatePrompt });

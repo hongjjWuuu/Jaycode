@@ -37,12 +37,13 @@ describe('WorkflowPage', () => {
     expect(screen.getByText('1 个节点 · 0 条连线')).toBeTruthy();
   });
 
-  it('confirms before deleting a saved workflow', () => {
+  it('shows deletion controls only while deletion mode is active', () => {
     const onDelete = vi.fn();
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
     renderPage({ onDelete });
+    expect(screen.queryByRole('button', { name: '删除 已保存流程' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+    expect(screen.getByRole('button', { name: '完成' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '删除 已保存流程' }));
-    expect(confirm).toHaveBeenCalledOnce();
     expect(onDelete).toHaveBeenCalledWith('wf-1');
   });
 

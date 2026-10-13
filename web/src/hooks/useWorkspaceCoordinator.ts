@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import type { FormEvent } from 'react';
 import type { FocusKind } from '../components/run/FocusPicker';
 import type { ExecutionMode, SkillRecord, WorkflowEdge, WorkflowNode, WorkflowRecord } from '../types';
 import { buildFocusedFileWorkflow, joinProjectPath } from '../utils/taskRuntime';
+import { inspectWorkflowRequirements } from '../utils/workflowRequirements';
 import { useGovernanceConsole } from './useGovernanceConsole';
 import { useKnowledgeChat } from './useKnowledgeChat';
 import { useTaskWorkspace } from './useTaskWorkspace';
@@ -22,6 +23,11 @@ export function useWorkspaceCoordinator({ activeView, setActiveView, initialNode
   const workflow = useWorkflowEditor(initialNodes, initialEdges, task.events);
   const knowledge = useKnowledgeChat({ taskId: task.latestTaskId, fallbackGoal: task.goal, askTask: task.askCurrentTask, onNavigate: setActiveView });
   const governance = useGovernanceConsole();
+  const workflowRequirements = useMemo(() => {
+    if (task.executionMode === 'workflow') return inspectWorkflowRequirements(workflow.nodes, governance.skills);
+    if (task.executionMode === 'knowledge') return { requiresProject: false, reasons: [], knowledgeScopeMissing: false };
+    return { requiresProject: true, reasons: ['当前运行模式需要读取本地项目'], knowledgeScopeMissing: false };
+  }, [governance.skills, task.executionMode, workflow.nodes]);
 
   const initialized = useRef(false);
   useEffect(() => {
@@ -62,6 +68,10 @@ export function useWorkspaceCoordinator({ activeView, setActiveView, initialNode
   }, [governance, setActiveView, task, workflow]);
   const runCurrentTask = useCallback(async (event: FormEvent) => {
     event.preventDefault();
+    if (workflowRequirements.knowledgeScopeMissing) {
+      task.setRunError('流程中的知识节点尚未选择知识范围，请在节点配置中选择“当前项目知识”或“历史共享知识”并保存。');
+      setActiveView('workflow'); return;
+    }
     if (task.executionMode === 'workflow') {
       const approvals = await governance.loadSkillApprovals();
       const blocked = workflow.nodes.filter((node) => node.type === 'skill' && !approvals.some((item) => item.skill_code === String(node.config.skill_code ?? '') && item.agent_code === String(node.config.agent_code ?? 'workflow_runner') && item.allowed));
@@ -70,8 +80,13 @@ export function useWorkspaceCoordinator({ activeView, setActiveView, initialNode
         setActiveView('workflow'); return;
       }
     }
-    await runFollowUpTask({ mode: task.executionMode, nextGoal: task.goal, nextProjectPath: task.projectPath, nextMaxFiles: task.maxFiles, nextWorkflowName: workflow.workflowName, nextNodes: task.executionMode === 'workflow' ? workflow.nodes : [], nextEdges: task.executionMode === 'workflow' ? workflow.edges : [] });
-  }, [governance, runFollowUpTask, setActiveView, task, workflow]);
+    let runPath = task.projectPath;
+    if (workflowRequirements.requiresProject || task.projectPath.trim()) {
+      try { runPath = (await task.validateProject()).resolved_path; }
+      catch { return; }
+    }
+    await runFollowUpTask({ mode: task.executionMode, nextGoal: task.goal, nextProjectPath: runPath, nextMaxFiles: task.maxFiles, nextWorkflowName: workflow.workflowName, nextNodes: task.executionMode === 'workflow' ? workflow.nodes : [], nextEdges: task.executionMode === 'workflow' ? workflow.edges : [] });
+  }, [governance, runFollowUpTask, setActiveView, task, workflow, workflowRequirements]);
   const openTask = useCallback(async (taskId: string, view: ViewKey = 'history') => {
     const result = await task.restoreTaskContext(taskId); workflow.setWorkflowValidation(result.validation ?? null); setActiveView(view);
   }, [setActiveView, task, workflow]);
@@ -125,11 +140,11 @@ export function useWorkspaceCoordinator({ activeView, setActiveView, initialNode
   return {
     activeStatus: task.running ? 'running' : task.latestStatus, navigate,
     focusPicker: { ...task.focusPicker, onClose: task.closeFocusPicker, onSelect: focusTarget },
-    runPage: { goal: task.goal, projectPath: task.projectPath, maxFiles: task.maxFiles, requireReview: task.requireReview, running: task.running, submitLabel: modeHelp[task.executionMode], error: task.runError, events: task.events, latestTaskId: task.latestTaskId, latestStatus: task.latestStatus, workflowName: workflow.workflowName, workflowId: workflow.workflowId, workflows: workflow.savedWorkflows, taskNeedsReview: task.taskNeedsReview, reviewComment: task.reviewComment, resumeSnapshots: task.resumeSnapshots, selectedEvent: task.selectedEvent, toolCalls: task.visibleToolCalls, agentOutputs: task.visibleAgentOutputs, onReviewCommentChange: task.setReviewComment, onReview: review, onReviewAction: reviewAction, onGoalChange: task.setGoal, onProjectPathChange: task.setProjectPath, onMaxFilesChange: task.setMaxFiles, onRequireReviewChange: task.setRequireReview, onWorkflowSelect: (workflowId: string) => { const selected = workflow.savedWorkflows.find((item) => item.workflow_id === workflowId); if (selected) { workflow.loadWorkflow(selected); task.setExecutionMode('workflow'); } }, onWorkflowsRefresh: workflow.refreshWorkflows, onSubmit: runCurrentTask },
+    runPage: { goal: task.goal, projectPath: task.projectPath, resolvedProject: task.resolvedProject, projectValidationStatus: task.projectValidationStatus, projectValidationError: task.projectValidationError, requiresProject: workflowRequirements.requiresProject, projectReasons: workflowRequirements.reasons, knowledgeScopeMissing: workflowRequirements.knowledgeScopeMissing, maxFiles: task.maxFiles, requireReview: task.requireReview, running: task.running, submitLabel: modeHelp[task.executionMode], error: task.runError, events: task.events, latestTaskId: task.latestTaskId, latestStatus: task.latestStatus, workflowName: workflow.workflowName, workflowId: workflow.workflowId, workflows: workflow.savedWorkflows, taskNeedsReview: task.taskNeedsReview, reviewComment: task.reviewComment, resumeSnapshots: task.resumeSnapshots, selectedEvent: task.selectedEvent, toolCalls: task.visibleToolCalls, agentOutputs: task.visibleAgentOutputs, onReviewCommentChange: task.setReviewComment, onReview: review, onReviewAction: reviewAction, onGoalChange: task.setGoal, onProjectPathChange: task.setProjectPath, onProjectValidate: task.validateProject, onMaxFilesChange: task.setMaxFiles, onRequireReviewChange: task.setRequireReview, onWorkflowSelect: (workflowId: string) => { const selected = workflow.savedWorkflows.find((item) => item.workflow_id === workflowId); if (selected) { workflow.loadWorkflow(selected); task.setExecutionMode('workflow'); } }, onWorkflowsRefresh: workflow.refreshWorkflows, onSubmit: runCurrentTask },
     workflowPage: { name: workflow.workflowName, description: workflow.workflowDescription, validation: workflow.workflowValidation, workflows: workflow.savedWorkflows, canvas: workflow.workflowCanvas, nodeConfig: { node: workflow.selectedNode, approvals: governance.skillApprovals, onNodeChange: workflow.updateSelectedNode, onConfigChange: workflow.updateSelectedConfig, onApproveSkill: async (code: string, agent: string) => governance.updateSkillApproval(code, agent, true, 'Approved from Workflow node config.'), onDelete: workflow.deleteSelectedNode }, edgeConfig: { edge: workflow.selectedEdge, nodes: workflow.nodes, onChange: workflow.updateSelectedEdge, onDelete: workflow.deleteSelectedEdge }, onNameChange: workflow.setWorkflowName, onDescriptionChange: workflow.setWorkflowDescription, onNew: workflow.createWorkflow, onAddNode: workflow.addNode, onSave: workflow.persistWorkflow, onValidate: workflow.checkWorkflow, onLoad: (item: WorkflowRecord) => { workflow.loadWorkflow(item); task.setExecutionMode('workflow'); setActiveView('workflow'); }, onDelete: workflow.deleteWorkflow, onRefresh: workflow.refreshWorkflows },
     reportsPage: { finalReport: task.finalReport, mermaid: task.mermaid, nodes: workflow.nodes, edges: workflow.edges, riskLevel: task.riskLevel, reviewRequired: task.reviewRequired, nextActions: task.nextActions, suggestions: task.suggestions, suggestionRecords: task.suggestionRecords, knowledgeDocumentCount: knowledge.knowledgeDocs.length, onOpenKnowledge: async () => { await knowledge.changeMode('knowledge'); setActiveView('chat'); } },
     chatPage: { chatInput: knowledge.chatInput, chatMessages: knowledge.chatMessages, chatMode: knowledge.chatMode, chatSources: knowledge.chatSources, knowledgeDocs: knowledge.knowledgeDocs, knowledgeNote: knowledge.knowledgeNote, memories: knowledge.memories, learningPlans: knowledge.learningPlans, latestTaskId: task.latestTaskId, tasks: task.tasks, selectedTaskId: task.selectedTaskId, onChatInputChange: knowledge.setChatInput, onChatModeChange: knowledge.changeMode, onKnowledgeNoteChange: knowledge.setKnowledgeNote, onMemoryConfirm: knowledge.confirm, onMemoryDelete: knowledge.remove, onMemoryReject: knowledge.reject, onLearningPlanStatus: async (id: string, status: Parameters<typeof knowledge.setPlanStatus>[1]) => { await knowledge.setPlanStatus(id, status); }, onOpenTask: (id: string) => openTask(id, 'chat'), onRefreshTasks: task.refreshTasks, onSaveKnowledgeNote: knowledge.saveKnowledgeNote, onSend: knowledge.send },
-    historyPage: { tasks: task.tasks, selectedTaskId: task.selectedTaskId, events: task.events, finalReport: task.finalReport, onOpen: openTask, onRefresh: task.refreshTasks },
+    historyPage: { tasks: task.tasks, deletedTasks: task.deletedTasks, taskActor: task.taskActor, selectedTaskId: task.selectedTaskId, events: task.events, finalReport: task.finalReport, onOpen: openTask, onRefresh: task.refreshTasks, onRefreshDeleted: task.refreshDeletedTasks, onDelete: task.deleteTasks, onRestore: task.restoreDeletedTasks },
     operationsPage: { onOpenTask: (id: string) => openTask(id, 'history') },
     llmPage: { prompts: governance.llmPrompts, usage: governance.llmUsage, traces: governance.llmTraces, traceAgent: governance.llmTraceAgent, agentFilter: governance.llmAgentFilter, onAgentFilterChange: governance.changeLlmAgent, onTraceAgentChange: governance.changeLlmTraceAgent, onActivatePrompt: governance.activateLlmPrompt, onSavePrompt: governance.savePrompt, onRunAbTest: governance.runPromptAbTest, onRefresh: governance.refreshLlm },
     mcpPage: { projectPath: task.projectPath, status: governance.mcpStatus, servers: governance.mcpServers, tools: governance.mcpTools, logs: governance.mcpLogs, onRefresh: governance.refreshMcp, onSaveServer: governance.saveServer, onServerEnabled: governance.setServerEnabled, onDiscover: governance.discoverServer, onToolEnabled: governance.setToolEnabled, onApproveTool: governance.setToolApproval, onCallTool: governance.invokeTool },

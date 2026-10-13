@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -73,7 +74,11 @@ class SQLiteTaskStore:
             self._ensure_column(conn, "agent_task", "error_code", "TEXT")
             self._ensure_column(conn, "agent_task", "error_message", "TEXT")
             self._ensure_column(conn, "agent_task", "failed_at", "TEXT")
+            self._ensure_column(conn, "agent_task", "deleted_at", "TEXT")
+            self._ensure_column(conn, "agent_task", "deleted_by", "TEXT")
+            self._ensure_column(conn, "agent_task", "purge_after", "TEXT")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_task_queue ON agent_task(status, lease_until, created_at)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_task_deleted_purge ON agent_task(deleted_at, purge_after)")
             conn.execute(
                 """CREATE TABLE IF NOT EXISTS agent_worker (
                     worker_id TEXT PRIMARY KEY, pid INTEGER NOT NULL, started_at TEXT NOT NULL,
@@ -737,30 +742,81 @@ class SQLiteTaskStore:
                 )
                 next_seq += 1
 
-    def list_tasks(self, limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
+    def list_tasks(self, limit: int = 100, offset: int = 0, include_deleted: bool = False) -> list[dict[str, Any]]:
+        deleted_filter = "deleted_at IS NOT NULL AND purge_after > ?" if include_deleted else "deleted_at IS NULL"
+        params: tuple[Any, ...] = ((utc_now_iso(),) if include_deleted else ()) + (max(1, min(limit, 1000)), max(0, offset))
         with self._connect() as conn:
             rows = conn.execute(
                 """
-                SELECT task_id, goal, project_path, status, created_at, updated_at, final_report, request_id, actor_id, role, idempotency_key, execution_version, retry_count, resume_count, worker_id, lease_until, heartbeat_at, attempt, error_code, error_message, failed_at
+                SELECT task_id, goal, project_path, status, created_at, updated_at, final_report, request_id, actor_id, role, idempotency_key, execution_version, retry_count, resume_count, worker_id, lease_until, heartbeat_at, attempt, error_code, error_message, failed_at, deleted_at, deleted_by, purge_after
                 FROM agent_task
+                WHERE """ + deleted_filter + """
                 ORDER BY created_at DESC
                 LIMIT ? OFFSET ?
                 """
-                , (max(1, min(limit, 1000)), max(0, offset))
+                , params
             ).fetchall()
         return [dict(row) for row in rows]
 
-    def get_task(self, task_id: str) -> dict[str, Any] | None:
+    def get_task(self, task_id: str, include_deleted: bool = False) -> dict[str, Any] | None:
         with self._connect() as conn:
             row = conn.execute(
                 """
-                SELECT task_id, goal, project_path, status, created_at, updated_at, final_report, request_id, actor_id, role, idempotency_key, execution_version, retry_count, resume_count, worker_id, lease_until, heartbeat_at, attempt, error_code, error_message, failed_at
+                SELECT task_id, goal, project_path, status, created_at, updated_at, final_report, request_id, actor_id, role, idempotency_key, execution_version, retry_count, resume_count, worker_id, lease_until, heartbeat_at, attempt, error_code, error_message, failed_at, deleted_at, deleted_by, purge_after
                 FROM agent_task
-                WHERE task_id = ?
+                WHERE task_id = ? AND (deleted_at IS NULL OR ? = 1)
                 """,
-                (task_id,),
+                (task_id, int(include_deleted)),
             ).fetchone()
         return dict(row) if row else None
+
+    def soft_delete_tasks(self, task_ids: list[str], actor_id: str, is_admin: bool) -> dict[str, list[dict[str, Any]]]:
+        now = utc_now_iso()
+        purge_after = (datetime.now(BEIJING_TZ) + timedelta(days=30)).strftime("%Y-%m-%d, %H:%M")
+        result: dict[str, list[dict[str, Any]]] = {"deleted": [], "restored": [], "skipped": [], "failed": []}
+        with self._connect() as conn:
+            for task_id in dict.fromkeys(task_ids):
+                row = conn.execute("SELECT task_id, status, actor_id, deleted_at FROM agent_task WHERE task_id = ?", (task_id,)).fetchone()
+                if not row:
+                    result["skipped"].append({"task_id": task_id, "error_code": "TASK_NOT_FOUND", "message": "任务不存在。"}); continue
+                if row["deleted_at"]:
+                    result["skipped"].append({"task_id": task_id, "error_code": "TASK_ALREADY_DELETED", "message": "任务已在回收站中。"}); continue
+                if not is_admin and row["actor_id"] != actor_id:
+                    result["skipped"].append({"task_id": task_id, "error_code": "TASK_DELETE_FORBIDDEN", "message": "只能删除自己创建的任务。"}); continue
+                if row["status"] not in {"completed", "failed", "rejected", "cancelled"}:
+                    result["skipped"].append({"task_id": task_id, "error_code": "TASK_DELETE_NOT_TERMINAL", "message": "仅可删除已结束的任务。"}); continue
+                conn.execute("UPDATE agent_task SET deleted_at=?, deleted_by=?, purge_after=?, updated_at=? WHERE task_id=?", (now, actor_id, purge_after, now, task_id))
+                result["deleted"].append({"task_id": task_id, "purge_after": purge_after})
+        return result
+
+    def restore_deleted_tasks(self, task_ids: list[str], actor_id: str, is_admin: bool) -> dict[str, list[dict[str, Any]]]:
+        result: dict[str, list[dict[str, Any]]] = {"deleted": [], "restored": [], "skipped": [], "failed": []}
+        with self._connect() as conn:
+            for task_id in dict.fromkeys(task_ids):
+                row = conn.execute("SELECT task_id, actor_id, deleted_at, purge_after FROM agent_task WHERE task_id = ?", (task_id,)).fetchone()
+                if not row:
+                    result["skipped"].append({"task_id": task_id, "error_code": "TASK_NOT_FOUND", "message": "任务不存在或已永久清理。"}); continue
+                if not row["deleted_at"]:
+                    result["skipped"].append({"task_id": task_id, "error_code": "TASK_NOT_DELETED", "message": "任务不在回收站中。"}); continue
+                if not is_admin and row["actor_id"] != actor_id:
+                    result["skipped"].append({"task_id": task_id, "error_code": "TASK_DELETE_FORBIDDEN", "message": "只能恢复自己创建的任务。"}); continue
+                if str(row["purge_after"] or "") <= utc_now_iso():
+                    result["skipped"].append({"task_id": task_id, "error_code": "TASK_RESTORE_EXPIRED", "message": "任务保留期已到，无法恢复。"}); continue
+                conn.execute("UPDATE agent_task SET deleted_at=NULL, deleted_by=NULL, purge_after=NULL, updated_at=? WHERE task_id=?", (utc_now_iso(), task_id))
+                result["restored"].append({"task_id": task_id})
+        return result
+
+    def purge_expired_deleted_tasks(self) -> list[str]:
+        now = utc_now_iso(); purged: list[str] = []
+        with self._connect() as conn:
+            rows = conn.execute("SELECT task_id FROM agent_task WHERE deleted_at IS NOT NULL AND purge_after <= ?", (now,)).fetchall()
+            for row in rows:
+                task_id = str(row["task_id"])
+                for table in ("agent_task_event", "agent_task_artifact", "human_review_action", "learning_plan"):
+                    conn.execute(f"DELETE FROM {table} WHERE task_id = ?", (task_id,))
+                conn.execute("DELETE FROM agent_task WHERE task_id = ?", (task_id,))
+                purged.append(task_id)
+        return purged
 
     def get_task_by_idempotency_key(self, idempotency_key: str) -> dict[str, Any] | None:
         with self._connect() as conn:

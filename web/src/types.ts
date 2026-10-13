@@ -16,10 +16,32 @@ export type TaskSummary = {
   task_id: string;
   goal: string;
   project_path?: string;
+  project_id?: string;
   status: string;
   created_at: string;
   updated_at: string;
   final_report?: string;
+  actor_id?: string;
+  deleted_at?: string;
+  deleted_by?: string;
+  purge_after?: string;
+};
+
+export type TaskBatchMutationResult = {
+  deleted: Array<{ task_id: string; purge_after?: string }>;
+  restored: Array<{ task_id: string }>;
+  skipped: Array<{ task_id: string; error_code: string; message: string }>;
+  failed: Array<{ task_id: string; error_code: string; message: string }>;
+};
+
+export type ResolvedProject = {
+  input_path: string;
+  resolved_path: string;
+  project_name: string;
+  project_id: string;
+  allowed_root: string;
+  file_count: number;
+  directory_count: number;
 };
 
 export type OperationsAlert = {
@@ -96,6 +118,8 @@ export type TaskResultPayload = {
   type: 'task_result';
   task_id: string;
   status: string;
+  project_path?: string | null;
+  project_id?: string | null;
   final_report?: string;
   mermaid?: string;
   suggestions?: string[];
@@ -172,6 +196,7 @@ export type RagResult = {
   rerank_score?: number | null;
   retrieval_mode?: string;
   content?: string;
+  metadata?: Record<string, unknown>;
 };
 
 export type RagGoldCase = {

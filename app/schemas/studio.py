@@ -391,6 +391,21 @@ class CollaborationResponse(BaseModel):
     final_report: str
 
 
+class ProjectResolveRequest(BaseModel):
+    project_path: str
+    max_files: int = Field(default=200, ge=1, le=2000)
+
+
+class ProjectResolveResponse(BaseModel):
+    input_path: str
+    resolved_path: str
+    project_name: str
+    project_id: str
+    allowed_root: str
+    file_count: int
+    directory_count: int
+
+
 class TaskRunRequest(BaseModel):
     goal: str
     project_path: str | None = None
@@ -411,3 +426,14 @@ class TaskRunResponse(BaseModel):
     status: str
     events: list[dict[str, Any]]
     result: dict[str, Any]
+
+
+class TaskBatchMutationRequest(BaseModel):
+    task_ids: list[str] = Field(min_length=1, max_length=100)
+
+
+class TaskBatchMutationResponse(BaseModel):
+    deleted: list[dict[str, Any]] = Field(default_factory=list)
+    restored: list[dict[str, Any]] = Field(default_factory=list)
+    skipped: list[dict[str, Any]] = Field(default_factory=list)
+    failed: list[dict[str, Any]] = Field(default_factory=list)

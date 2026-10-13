@@ -1,4 +1,4 @@
-import type { AgentEvent, AskResponse, ExecutionMode, TaskDetail, TaskSummary, WorkflowEdge, WorkflowNode } from '../types';
+import type { AgentEvent, AskResponse, ExecutionMode, TaskBatchMutationResult, TaskDetail, TaskSummary, WorkflowEdge, WorkflowNode } from '../types';
 import { consumeSse, requestJson, responseError } from './http';
 
 const API_BASE = '';
@@ -19,7 +19,10 @@ export function runCollaborationTaskStream(payload: TaskRunPayload, onEvent: (ev
   return stream('/api/v1/tasks/collaborate/stream', { ...payload, execution_mode: 'collaboration', nodes: [], edges: [] }, onEvent);
 }
 
-export async function listTasks(): Promise<TaskSummary[]> { return (await requestJson<{ tasks?: TaskSummary[] }>('/api/v1/tasks', {}, '任务列表读取失败')).tasks ?? []; }
+export async function listTasks(includeDeleted = false): Promise<TaskSummary[]> { return (await requestJson<{ tasks?: TaskSummary[] }>(`/api/v1/tasks${includeDeleted ? '?include_deleted=true' : ''}`, {}, '任务列表读取失败')).tasks ?? []; }
+export function getTaskAuthContext(): Promise<{ actor_id: string; role: string }> { return requestJson('/api/v1/auth/context', {}, '身份读取失败'); }
+export function batchDeleteTasks(taskIds: string[]): Promise<TaskBatchMutationResult> { return requestJson('/api/v1/tasks/batch-delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ task_ids: taskIds }) }, '任务删除失败'); }
+export function batchRestoreTasks(taskIds: string[]): Promise<TaskBatchMutationResult> { return requestJson('/api/v1/tasks/batch-restore', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ task_ids: taskIds }) }, '任务恢复失败'); }
 export function getTaskDetail(taskId: string): Promise<TaskDetail> { return requestJson(`/api/v1/tasks/${encodeURIComponent(taskId)}`, {}, 'Task detail failed'); }
 export async function getTaskReport(taskId: string): Promise<string> { return (await requestJson<{ final_report?: string }>(`/api/v1/tasks/${encodeURIComponent(taskId)}/report`, {}, '报告读取失败')).final_report ?? ''; }
 export async function getTaskEvents(taskId: string): Promise<AgentEvent[]> { return (await requestJson<{ events?: AgentEvent[] }>(`/api/v1/tasks/${encodeURIComponent(taskId)}/events`, {}, '事件读取失败')).events ?? []; }

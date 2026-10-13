@@ -10,12 +10,12 @@ from __future__ import annotations
 import json
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
 from app.core.config import settings
-from app.harness.events import utc_now_iso
+from app.harness.events import BEIJING_TZ, utc_now_iso
 from app.persistence.postgres_migrations import (
     PostgresMigration,
     apply_postgres_migrations,
@@ -367,6 +367,23 @@ class PostgresTaskStore:
         )
         with self.connection() as conn:
             apply_postgres_migrations(conn, (PostgresMigration(3, "legacy-domain-schema", legacy_statements),))
+        with self.connection() as conn:
+            apply_postgres_migrations(
+                conn,
+                (PostgresMigration(4, "rag-document-project-metadata", (
+                    "ALTER TABLE rag_document ADD COLUMN IF NOT EXISTS metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb",
+                )),),
+            )
+        with self.connection() as conn:
+            apply_postgres_migrations(
+                conn,
+                (PostgresMigration(5, "task-soft-delete", (
+                    "ALTER TABLE agent_task ADD COLUMN IF NOT EXISTS deleted_at TEXT",
+                    "ALTER TABLE agent_task ADD COLUMN IF NOT EXISTS deleted_by TEXT",
+                    "ALTER TABLE agent_task ADD COLUMN IF NOT EXISTS purge_after TEXT",
+                    "CREATE INDEX IF NOT EXISTS idx_pg_task_deleted_purge ON agent_task(deleted_at, purge_after)",
+                )),),
+            )
 
     def save_audit(self, record: dict[str, Any]) -> None:
         audit = {"audit_id": record.get("audit_id") or f"audit_{uuid4().hex}", **record}
@@ -1297,15 +1314,65 @@ class PostgresTaskStore:
                 return dict(existing) if existing and existing["task_id"] != task_id else None
         return None
 
-    def get_task(self, task_id: str) -> dict[str, Any] | None:
+    def get_task(self, task_id: str, include_deleted: bool = False) -> dict[str, Any] | None:
         with self.connection() as conn:
-            row = conn.execute("SELECT * FROM agent_task WHERE task_id = %s", (task_id,)).fetchone()
+            row = conn.execute("SELECT * FROM agent_task WHERE task_id = %s AND (deleted_at IS NULL OR %s)", (task_id, include_deleted)).fetchone()
         return dict(row) if row else None
 
-    def list_tasks(self, limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
+    def list_tasks(self, limit: int = 100, offset: int = 0, include_deleted: bool = False) -> list[dict[str, Any]]:
+        deleted_filter = "deleted_at IS NOT NULL AND purge_after > %s" if include_deleted else "deleted_at IS NULL"
+        params: tuple[Any, ...] = ((utc_now_iso(),) if include_deleted else ()) + (max(1, min(limit, 1000)), max(0, offset))
         with self.connection() as conn:
-            rows = conn.execute("SELECT * FROM agent_task ORDER BY created_at DESC LIMIT %s OFFSET %s", (max(1, min(limit, 1000)), max(0, offset))).fetchall()
+            rows = conn.execute("SELECT * FROM agent_task WHERE " + deleted_filter + " ORDER BY created_at DESC LIMIT %s OFFSET %s", params).fetchall()
         return [dict(row) for row in rows]
+
+    def soft_delete_tasks(self, task_ids: list[str], actor_id: str, is_admin: bool) -> dict[str, list[dict[str, Any]]]:
+        now = utc_now_iso()
+        purge_after = (datetime.now(BEIJING_TZ) + timedelta(days=30)).strftime("%Y-%m-%d, %H:%M")
+        result: dict[str, list[dict[str, Any]]] = {"deleted": [], "restored": [], "skipped": [], "failed": []}
+        with self.connection() as conn:
+            for task_id in dict.fromkeys(task_ids):
+                row = conn.execute("SELECT task_id, status, actor_id, deleted_at FROM agent_task WHERE task_id=%s FOR UPDATE", (task_id,)).fetchone()
+                if not row:
+                    result["skipped"].append({"task_id": task_id, "error_code": "TASK_NOT_FOUND", "message": "任务不存在。"}); continue
+                if row["deleted_at"]:
+                    result["skipped"].append({"task_id": task_id, "error_code": "TASK_ALREADY_DELETED", "message": "任务已在回收站中。"}); continue
+                if not is_admin and row["actor_id"] != actor_id:
+                    result["skipped"].append({"task_id": task_id, "error_code": "TASK_DELETE_FORBIDDEN", "message": "只能删除自己创建的任务。"}); continue
+                if row["status"] not in {"completed", "failed", "rejected", "cancelled"}:
+                    result["skipped"].append({"task_id": task_id, "error_code": "TASK_DELETE_NOT_TERMINAL", "message": "仅可删除已结束的任务。"}); continue
+                conn.execute("UPDATE agent_task SET deleted_at=%s, deleted_by=%s, purge_after=%s, updated_at=%s WHERE task_id=%s", (now, actor_id, purge_after, now, task_id))
+                result["deleted"].append({"task_id": task_id, "purge_after": purge_after})
+        return result
+
+    def restore_deleted_tasks(self, task_ids: list[str], actor_id: str, is_admin: bool) -> dict[str, list[dict[str, Any]]]:
+        result: dict[str, list[dict[str, Any]]] = {"deleted": [], "restored": [], "skipped": [], "failed": []}
+        with self.connection() as conn:
+            for task_id in dict.fromkeys(task_ids):
+                row = conn.execute("SELECT task_id, actor_id, deleted_at, purge_after FROM agent_task WHERE task_id=%s FOR UPDATE", (task_id,)).fetchone()
+                if not row:
+                    result["skipped"].append({"task_id": task_id, "error_code": "TASK_NOT_FOUND", "message": "任务不存在或已永久清理。"}); continue
+                if not row["deleted_at"]:
+                    result["skipped"].append({"task_id": task_id, "error_code": "TASK_NOT_DELETED", "message": "任务不在回收站中。"}); continue
+                if not is_admin and row["actor_id"] != actor_id:
+                    result["skipped"].append({"task_id": task_id, "error_code": "TASK_DELETE_FORBIDDEN", "message": "只能恢复自己创建的任务。"}); continue
+                if str(row["purge_after"] or "") <= utc_now_iso():
+                    result["skipped"].append({"task_id": task_id, "error_code": "TASK_RESTORE_EXPIRED", "message": "任务保留期已到，无法恢复。"}); continue
+                conn.execute("UPDATE agent_task SET deleted_at=NULL, deleted_by=NULL, purge_after=NULL, updated_at=%s WHERE task_id=%s", (utc_now_iso(), task_id))
+                result["restored"].append({"task_id": task_id})
+        return result
+
+    def purge_expired_deleted_tasks(self) -> list[str]:
+        now = utc_now_iso(); purged: list[str] = []
+        with self.connection() as conn:
+            rows = conn.execute("SELECT task_id FROM agent_task WHERE deleted_at IS NOT NULL AND purge_after <= %s FOR UPDATE SKIP LOCKED", (now,)).fetchall()
+            for row in rows:
+                task_id = str(row["task_id"])
+                for table in ("agent_task_node_state", "human_review_action", "learning_plan", "platform_query"):
+                    conn.execute(f"DELETE FROM {table} WHERE task_id=%s", (task_id,))
+                conn.execute("DELETE FROM agent_task WHERE task_id=%s", (task_id,))
+                purged.append(task_id)
+        return purged
 
     def get_task_by_idempotency_key(self, key: str) -> dict[str, Any] | None:
         with self.connection() as conn:
@@ -1313,8 +1380,9 @@ class PostgresTaskStore:
         return dict(row) if row else None
 
     def get_task_input(self, task_id: str) -> dict[str, Any]:
-        task = self.get_task(task_id)
-        value = task.get("input_json") if task else {}
+        with self.connection() as conn:
+            row = conn.execute("SELECT input_json FROM agent_task WHERE task_id=%s", (task_id,)).fetchone()
+        value = row["input_json"] if row else {}
         return value if isinstance(value, dict) else json.loads(value or "{}")
 
     def update_task(self, task_id: str, status: str, final_report: str | None = None, *, retry: bool = False, resume: bool = False) -> None:

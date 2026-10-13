@@ -84,6 +84,7 @@ class SQLiteRagStore:
                 "is_current": "INTEGER NOT NULL DEFAULT 1",
                 "valid_to": "TEXT",
                 "acl_json": "TEXT NOT NULL DEFAULT '[\"*\"]'",
+                "metadata_json": "TEXT NOT NULL DEFAULT '{}'",
             }.items():
                 if name not in document_columns:
                     conn.execute(f"ALTER TABLE rag_document ADD COLUMN {name} {definition}")
@@ -145,8 +146,8 @@ class SQLiteRagStore:
                     conn.execute("UPDATE rag_document SET is_current = 0, valid_to = ? WHERE id = ?", (utc_now_iso(), existing["id"]))
                 # 新版本入库
                 conn.execute(
-                    "INSERT INTO rag_document(collection, path, size, created_at, content_hash, version, is_current, acl_json) VALUES (?, ?, ?, ?, ?, ?, 1, ?)",
-                    (collection, path, doc.get("size"), utc_now_iso(), content_hash, version, acl_json),
+                    "INSERT INTO rag_document(collection, path, size, created_at, content_hash, version, is_current, acl_json, metadata_json) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)",
+                    (collection, path, doc.get("size"), utc_now_iso(), content_hash, version, acl_json, json.dumps(doc.get("metadata") or {}, ensure_ascii=False)),
                 )
                 # 删除旧切片，插入新切片
                 conn.execute("DELETE FROM rag_chunk WHERE collection = ? AND path = ? AND document_version = ?", (collection, path, version))
@@ -189,14 +190,18 @@ class SQLiteRagStore:
         with self._connection() as conn:
             if collection:
                 rows = conn.execute(
-                    "SELECT collection, path, size, created_at, version, is_current, valid_to, acl_json FROM rag_document WHERE collection = ? ORDER BY path, version DESC",
+                    "SELECT collection, path, size, created_at, version, is_current, valid_to, acl_json, metadata_json FROM rag_document WHERE collection = ? ORDER BY path, version DESC",
                     (collection,),
                 ).fetchall()
             else:
                 rows = conn.execute(
-                    "SELECT collection, path, size, created_at, version, is_current, valid_to, acl_json FROM rag_document ORDER BY collection, path, version DESC"
+                    "SELECT collection, path, size, created_at, version, is_current, valid_to, acl_json, metadata_json FROM rag_document ORDER BY collection, path, version DESC"
                 ).fetchall()
-        return [{key: value for key, value in dict(row).items() if key != "acl_json"} for row in rows if _acl_allows(row["acl_json"], actor_id)]
+        return [
+            {**{key: value for key, value in dict(row).items() if key not in {"acl_json", "metadata_json"}}, "metadata": json.loads(row["metadata_json"] or "{}")}
+            for row in rows
+            if _acl_allows(row["acl_json"], actor_id)
+        ]
 
     # 给文档设置访问控制
     def set_document_acl(self, collection: str, path: str, principals: list[str]) -> bool:
@@ -492,6 +497,7 @@ class PgVectorRagStore:
                 cur.execute("ALTER TABLE rag_document ADD COLUMN IF NOT EXISTS valid_to TIMESTAMPTZ")
                 # ACL 用 JSONB 而不是 TEXT
                 cur.execute("ALTER TABLE rag_document ADD COLUMN IF NOT EXISTS acl_json JSONB NOT NULL DEFAULT '[\"*\"]'::jsonb")
+                cur.execute("ALTER TABLE rag_document ADD COLUMN IF NOT EXISTS metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb")
                 cur.execute("ALTER TABLE rag_chunk ADD COLUMN IF NOT EXISTS document_version INTEGER NOT NULL DEFAULT 1")
                 cur.execute("ALTER TABLE rag_chunk ADD COLUMN IF NOT EXISTS metadata_json JSONB NOT NULL DEFAULT '{}'::jsonb")
                 cur.execute("ALTER TABLE rag_document DROP CONSTRAINT IF EXISTS rag_document_collection_path_key")
@@ -518,7 +524,7 @@ class PgVectorRagStore:
                 )
             conn.commit()
         required_columns = {
-            "rag_document": {"id", "collection", "path", "size", "content_hash", "version", "is_current", "acl_json"},
+            "rag_document": {"id", "collection", "path", "size", "content_hash", "version", "is_current", "acl_json", "metadata_json"},
             "rag_chunk": {"id", "collection", "chunk_id", "path", "content", "metadata_json", "embedding", "embedding_source", "document_version"},
             "rag_gold_case": {"case_id", "collection", "question", "expected_chunk_ids_json", "expected_paths_json", "expected_keywords_json", "metadata_json", "enabled"},
         }
@@ -578,10 +584,10 @@ class PgVectorRagStore:
                     # 新版本入库
                     cur.execute(
                         """
-                        INSERT INTO rag_document(collection, path, size, created_at, content_hash, version, is_current, acl_json)
-                        VALUES (%s, %s, %s, %s, %s, %s, TRUE, %s::jsonb)
+                        INSERT INTO rag_document(collection, path, size, created_at, content_hash, version, is_current, acl_json, metadata_json)
+                        VALUES (%s, %s, %s, %s, %s, %s, TRUE, %s::jsonb, %s::jsonb)
                         """,
-                        (collection, path, doc.get("size"), now, content_hash, version, _json_text(acl_json)),
+                        (collection, path, doc.get("size"), now, content_hash, version, _json_text(acl_json), _json_text(doc.get("metadata") or {})),
                     )
 
                     # 删除该版本的旧切片，收集新切片
@@ -656,7 +662,7 @@ class PgVectorRagStore:
                 if collection:
                     cur.execute(
                         """
-                        SELECT collection, path, size, created_at, version, is_current, valid_to, acl_json
+                        SELECT collection, path, size, created_at, version, is_current, valid_to, acl_json, metadata_json
                         FROM rag_document
                         WHERE collection = %s
                         ORDER BY path, version DESC
@@ -666,7 +672,7 @@ class PgVectorRagStore:
                 else:
                     cur.execute(
                         """
-                        SELECT collection, path, size, created_at, version, is_current, valid_to, acl_json
+                        SELECT collection, path, size, created_at, version, is_current, valid_to, acl_json, metadata_json
                         FROM rag_document
                         ORDER BY collection, path, version DESC
                         """
@@ -682,6 +688,7 @@ class PgVectorRagStore:
                 "version": row[4],
                 "is_current": bool(row[5]),
                 "valid_to": _china_minute(row[6]) if row[6] else None,
+                "metadata": row[8] or {},
             }
             for row in rows
             if _acl_allows(_json_text(row[7]), actor_id)
@@ -1051,6 +1058,7 @@ def _public_rag_result(item: dict[str, Any]) -> dict[str, Any]:
         "semantic_score": round(float(item.get("semantic_score") or 0), 4),
         "rerank_score": item.get("rerank_score"),
         "retrieval_mode": item.get("retrieval_mode", "hybrid_bm25_token_rrf"),
+        "metadata": item.get("metadata") or {},
         "content": str(item.get("content") or "")[:800],
     }
 

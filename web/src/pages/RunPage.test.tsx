@@ -5,7 +5,7 @@ import { RunPage } from './RunPage';
 afterEach(() => cleanup());
 
 function renderPage(overrides: Partial<React.ComponentProps<typeof RunPage>> = {}) {
-  return render(<RunPage goal="分析项目" projectPath="." maxFiles={100} requireReview running={false} submitLabel="开始执行" error={null} events={[]} latestTaskId="" latestStatus="idle" workflowName="默认流程" workflowId="" workflows={[]} taskNeedsReview={false} reviewComment="" resumeSnapshots={[]} selectedEvent={null} toolCalls={[]} agentOutputs={[]} onGoalChange={vi.fn()} onProjectPathChange={vi.fn()} onMaxFilesChange={vi.fn()} onRequireReviewChange={vi.fn()} onWorkflowSelect={vi.fn()} onWorkflowsRefresh={vi.fn()} onSubmit={vi.fn((event) => event.preventDefault())} onReviewCommentChange={vi.fn()} onReview={vi.fn()} onReviewAction={vi.fn()} {...overrides} />);
+  return render(<RunPage goal="分析项目" projectPath="." resolvedProject={{ input_path: '.', resolved_path: 'D:\\JayAgent\\Jaycode', project_name: 'Jaycode', project_id: 'abc123', allowed_root: 'D:\\JayAgent\\Jaycode', file_count: 10, directory_count: 3 }} projectValidationStatus="valid" projectValidationError="" requiresProject projectReasons={['项目分析需要读取项目']} knowledgeScopeMissing={false} maxFiles={100} requireReview running={false} submitLabel="开始执行" error={null} events={[]} latestTaskId="" latestStatus="idle" workflowName="默认流程" workflowId="" workflows={[]} taskNeedsReview={false} reviewComment="" resumeSnapshots={[]} selectedEvent={null} toolCalls={[]} agentOutputs={[]} onGoalChange={vi.fn()} onProjectPathChange={vi.fn()} onProjectValidate={vi.fn(async () => ({ input_path: '.', resolved_path: 'D:\\JayAgent\\Jaycode', project_name: 'Jaycode', project_id: 'abc123', allowed_root: 'D:\\JayAgent\\Jaycode', file_count: 10, directory_count: 3 }))} onMaxFilesChange={vi.fn()} onRequireReviewChange={vi.fn()} onWorkflowSelect={vi.fn()} onWorkflowsRefresh={vi.fn()} onSubmit={vi.fn((event) => event.preventDefault())} onReviewCommentChange={vi.fn()} onReview={vi.fn()} onReviewAction={vi.fn()} {...overrides} />);
 }
 
 describe('RunPage', () => {
@@ -21,6 +21,18 @@ describe('RunPage', () => {
     renderPage({ running: true, error: new Error('任务提交失败') });
     expect(screen.getByRole('button', { name: '执行中...' })).toBeDisabled();
     expect(screen.getByRole('alert')).toHaveTextContent('任务提交失败');
+  });
+
+  it('blocks a project workflow until a project is validated', () => {
+    renderPage({ projectPath: '', resolvedProject: null, projectValidationStatus: 'idle' });
+    expect(screen.getByRole('button', { name: '开始执行' })).toBeDisabled();
+    expect(screen.getByText('当前流程需要项目，请填写并验证项目路径')).toBeTruthy();
+  });
+
+  it('allows a project-free workflow to run without a path', () => {
+    renderPage({ projectPath: '', resolvedProject: null, projectValidationStatus: 'idle', requiresProject: false, projectReasons: [] });
+    expect(screen.getByRole('button', { name: '开始执行' })).toBeEnabled();
+    expect(screen.getByText('本次运行不扫描本地项目')).toBeTruthy();
   });
 
   it('loads a saved workflow selection and lets the user refresh the list', () => {
