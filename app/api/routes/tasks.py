@@ -7,5 +7,9 @@ router = build_domain_router(
     lambda path: (
         (path == "/api/v1/tasks" or path.startswith("/api/v1/tasks/"))
         and not path.endswith("/learning-plan")
-    ) or path in {"/api/v1/agents/collaborate", "/api/v1/workers"},
+    ) or path in {
+        "/api/v1/agents/collaborate",
+        "/api/v1/auth/context",
+        "/api/v1/workers",
+    },
 )
