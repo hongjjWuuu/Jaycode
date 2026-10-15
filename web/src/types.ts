@@ -44,6 +44,22 @@ export type ResolvedProject = {
   directory_count: number;
 };
 
+export type ProjectLibraryItem = {
+  registered_project_id: string;
+  owner_actor_id: string;
+  name: string;
+  resolved_path: string;
+  project_id: string;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+  last_used_at?: string | null;
+};
+
+export type ProjectBrowserRoot = { root_id: string; name: string; path: string };
+export type ProjectBrowserDirectory = { name: string; relative_path: string };
+export type ProjectBrowserResult = { root_id: string; root_name: string; relative_path: string; resolved_path: string; directories: ProjectBrowserDirectory[] };
+
 export type OperationsAlert = {
   code: string;
   severity: 'critical' | 'warning' | string;

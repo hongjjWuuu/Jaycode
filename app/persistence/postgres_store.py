@@ -377,6 +377,14 @@ class PostgresTaskStore:
         with self.connection() as conn:
             apply_postgres_migrations(
                 conn,
+                (PostgresMigration(6, "project-library", (
+                    "CREATE TABLE IF NOT EXISTS project_library (registered_project_id TEXT PRIMARY KEY, owner_actor_id TEXT NOT NULL, name TEXT NOT NULL, resolved_path TEXT NOT NULL, project_id TEXT NOT NULL, enabled BOOLEAN NOT NULL DEFAULT true, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, last_used_at TEXT, UNIQUE(owner_actor_id, resolved_path))",
+                    "CREATE INDEX IF NOT EXISTS idx_pg_project_library_owner_recent ON project_library(owner_actor_id, enabled, last_used_at)",
+                )),),
+            )
+        with self.connection() as conn:
+            apply_postgres_migrations(
+                conn,
                 (PostgresMigration(5, "task-soft-delete", (
                     "ALTER TABLE agent_task ADD COLUMN IF NOT EXISTS deleted_at TEXT",
                     "ALTER TABLE agent_task ADD COLUMN IF NOT EXISTS deleted_by TEXT",
@@ -392,6 +400,43 @@ class PostgresTaskStore:
                 "INSERT INTO security_audit_log(audit_id, request_id, actor_id, role, action, resource_type, resource_id, status, metadata_json, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (audit["audit_id"], audit.get("request_id", ""), audit.get("actor_id", "unknown"), audit.get("role", "unknown"), audit.get("action", "unknown"), audit.get("resource_type", "api"), audit.get("resource_id"), audit.get("status", "unknown"), json.dumps(audit.get("metadata", {}), ensure_ascii=False), audit.get("created_at") or utc_now_iso()),
             )
+
+    def list_registered_projects(self, actor_id: str, is_admin: bool = False, include_disabled: bool = False) -> list[dict[str, Any]]:
+        clauses = [] if is_admin else ["owner_actor_id = %s"]
+        values: list[Any] = [] if is_admin else [actor_id]
+        if not include_disabled:
+            clauses.append("enabled = true")
+        where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+        with self.connection() as conn:
+            rows = conn.execute(f"SELECT * FROM project_library{where} ORDER BY COALESCE(last_used_at, created_at) DESC, name", values).fetchall()
+        return [dict(row) for row in rows]
+
+    def save_registered_project(self, actor_id: str, name: str, resolved_path: str, project_id: str) -> dict[str, Any]:
+        now = utc_now_iso()
+        with self.connection() as conn:
+            row = conn.execute(
+                "INSERT INTO project_library(registered_project_id, owner_actor_id, name, resolved_path, project_id, enabled, created_at, updated_at, last_used_at) VALUES (%s,%s,%s,%s,%s,true,%s,%s,%s) ON CONFLICT(owner_actor_id, resolved_path) DO UPDATE SET name = EXCLUDED.name, project_id = EXCLUDED.project_id, enabled = true, updated_at = EXCLUDED.updated_at, last_used_at = EXCLUDED.last_used_at RETURNING *",
+                (f"project_{uuid4().hex}", actor_id, name, resolved_path, project_id, now, now, now),
+            ).fetchone()
+        return dict(row)
+
+    def update_registered_project(self, registered_project_id: str, actor_id: str, is_admin: bool, *, name: str | None = None, enabled: bool | None = None, touch: bool = False) -> dict[str, Any] | None:
+        ownership = "" if is_admin else " AND owner_actor_id = %s"
+        values: list[Any] = [name, enabled, utc_now_iso(), utc_now_iso() if touch else None, registered_project_id]
+        if not is_admin:
+            values.append(actor_id)
+        with self.connection() as conn:
+            row = conn.execute(
+                f"UPDATE project_library SET name = COALESCE(%s, name), enabled = COALESCE(%s, enabled), updated_at = %s, last_used_at = COALESCE(%s, last_used_at) WHERE registered_project_id = %s{ownership} RETURNING *",
+                values,
+            ).fetchone()
+        return dict(row) if row else None
+
+    def delete_registered_project(self, registered_project_id: str, actor_id: str, is_admin: bool) -> bool:
+        ownership = "" if is_admin else " AND owner_actor_id = %s"
+        values: list[str] = [registered_project_id] + ([] if is_admin else [actor_id])
+        with self.connection() as conn:
+            return conn.execute(f"DELETE FROM project_library WHERE registered_project_id = %s{ownership}", values).rowcount > 0
 
     def save_security_audit(self, record: dict[str, Any]) -> dict[str, Any]:
         audit = {

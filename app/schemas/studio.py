@@ -406,9 +406,28 @@ class ProjectResolveResponse(BaseModel):
     directory_count: int
 
 
+class ProjectDirectoryBrowseRequest(BaseModel):
+    root_id: str
+    relative_path: str = ""
+
+
+class ProjectLibrarySaveRequest(BaseModel):
+    project_path: str
+    name: str | None = Field(default=None, max_length=120)
+
+
+class ProjectLibraryRenameRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+
+
+class ProjectLibraryStatusRequest(BaseModel):
+    enabled: bool
+
+
 class TaskRunRequest(BaseModel):
     goal: str
     project_path: str | None = None
+    registered_project_id: str | None = None
     max_files: int = Field(default=500, ge=1, le=5000)
     require_human_review: bool = True
     execution_mode: str = Field(default="workflow", description="workflow/agent/tool/knowledge")

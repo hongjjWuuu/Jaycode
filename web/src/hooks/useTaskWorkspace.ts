@@ -1,13 +1,13 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   applyReviewAction, askTask, batchDeleteTasks, batchRestoreTasks, getTaskAuthContext, getTaskDetail, getTaskEvents, listTasks, reviewTask,
   runCollaborationTaskStream, runTaskStream, type TaskRunPayload,
 } from '../services/tasks';
 import { listProjectFiles } from '../services/projectFiles';
-import { resolveProject } from '../services/projects';
+import { listProjectLibrary, resolveProject, saveProjectToLibrary } from '../services/projects';
 import type {
   AgentEvent, AgentOutput, ExecutionMode, ResumeSnapshot, SuggestionRecord, TaskResultPayload,
-  ResolvedProject, TaskBatchMutationResult, TaskSummary, ToolCall,
+  ProjectLibraryItem, ResolvedProject, TaskBatchMutationResult, TaskSummary, ToolCall,
 } from '../types';
 import {
   deriveAgentOutputs, deriveModules, deriveToolCalls, extractResumeSnapshots,
@@ -42,6 +42,8 @@ export function useTaskWorkspace() {
   const [resolvedProject, setResolvedProject] = useState<ResolvedProject | null>(null);
   const [projectValidationStatus, setProjectValidationStatus] = useState<'idle' | 'validating' | 'valid' | 'invalid'>('idle');
   const [projectValidationError, setProjectValidationError] = useState('');
+  const [projectLibrary, setProjectLibrary] = useState<ProjectLibraryItem[]>([]);
+  const [registeredProjectId, setRegisteredProjectId] = useState<string | null>(null);
   const [maxFiles, setMaxFiles] = useState(100);
   const [requireReview, setRequireReview] = useState(true);
   const [reviewComment, setReviewComment] = useState('');
@@ -127,7 +129,7 @@ export function useTaskWorkspace() {
     finally { setFocusLoading(false); }
   }, [maxFiles, projectPath]);
   const changeProjectPath = useCallback((value: string) => {
-    setProjectPath(value); setResolvedProject(null); setProjectValidationStatus('idle'); setProjectValidationError('');
+    setProjectPath(value); setRegisteredProjectId(null); setResolvedProject(null); setProjectValidationStatus('idle'); setProjectValidationError('');
   }, []);
   const validateProject = useCallback(async () => {
     if (!projectPath.trim()) { setResolvedProject(null); setProjectValidationStatus('invalid'); setProjectValidationError('请输入项目路径。'); throw new Error('请输入项目路径。'); }
@@ -135,13 +137,29 @@ export function useTaskWorkspace() {
     try { const project = await resolveProject(projectPath, Math.min(2000, Math.max(1, maxFiles))); setResolvedProject(project); setProjectValidationStatus('valid'); return project; }
     catch (error) { const message = error instanceof Error ? error.message : String(error); setResolvedProject(null); setProjectValidationStatus('invalid'); setProjectValidationError(message); throw error; }
   }, [maxFiles, projectPath]);
+  const useTemporaryProject = useCallback(async (path: string) => {
+    setProjectPath(path); setRegisteredProjectId(null); setProjectValidationStatus('validating'); setProjectValidationError('');
+    try { const project = await resolveProject(path, Math.min(2000, Math.max(1, maxFiles))); setResolvedProject(project); setProjectValidationStatus('valid'); return project; }
+    catch (error) { const message = error instanceof Error ? error.message : String(error); setResolvedProject(null); setProjectValidationStatus('invalid'); setProjectValidationError(message); throw error; }
+  }, [maxFiles]);
+  const refreshProjectLibrary = useCallback(async () => setProjectLibrary(await listProjectLibrary()), []);
+  const selectSavedProject = useCallback(async (project: ProjectLibraryItem) => {
+    setProjectPath(project.resolved_path); setRegisteredProjectId(project.registered_project_id); setProjectValidationStatus('valid'); setProjectValidationError('');
+    setResolvedProject({ input_path: project.resolved_path, resolved_path: project.resolved_path, project_name: project.name, project_id: project.project_id, allowed_root: '', file_count: 0, directory_count: 0 });
+  }, []);
+  const saveCurrentProject = useCallback(async () => {
+    const project = resolvedProject ?? await validateProject();
+    const saved = await saveProjectToLibrary(project.resolved_path, project.project_name);
+    setRegisteredProjectId(saved.registered_project_id); await refreshProjectLibrary(); return saved;
+  }, [refreshProjectLibrary, resolvedProject, validateProject]);
+  useEffect(() => { void refreshProjectLibrary().catch(() => undefined); }, [refreshProjectLibrary]);
 
   return {
-    tasks, deletedTasks, taskActor, selectedTaskId, events, ...presentation, running, runError, executionMode, goal, projectPath, maxFiles,
+    tasks, deletedTasks, taskActor, selectedTaskId, events, ...presentation, running, runError, executionMode, goal, projectPath, maxFiles, projectLibrary, registeredProjectId,
     resolvedProject, projectValidationStatus, projectValidationError, requireReview, reviewComment, selectedEvent, latestTaskId, latestStatus, taskNeedsReview, visibleToolCalls,
     visibleAgentOutputs, focusPicker: { open: focusPickerOpen, files: focusFiles, modules: focusModules, loading: focusLoading, error: focusError },
     refreshTasks, refreshDeletedTasks, deleteTasks, restoreDeletedTasks, runTask, restoreTaskContext, submitReview, recordReviewAction, askCurrentTask, openFocusPicker,
-    closeFocusPicker: () => setFocusPickerOpen(false), setRunError, setExecutionMode, setGoal, setProjectPath: changeProjectPath, validateProject,
+    closeFocusPicker: () => setFocusPickerOpen(false), setRunError, setExecutionMode, setGoal, setProjectPath: changeProjectPath, validateProject, useTemporaryProject, refreshProjectLibrary, selectSavedProject, saveCurrentProject,
     setMaxFiles, setRequireReview, setReviewComment, setSelectedEvent,
   };
 }

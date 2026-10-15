@@ -2,7 +2,7 @@ import type { AgentEvent, AskResponse, ExecutionMode, TaskBatchMutationResult, T
 import { consumeSse, requestJson, responseError } from './http';
 
 const API_BASE = '';
-export type TaskRunPayload = { goal: string; project_path: string; max_files: number; require_human_review: boolean; execution_mode: ExecutionMode; workflow_name: string; input_text: string; nodes: WorkflowNode[]; edges: WorkflowEdge[] };
+export type TaskRunPayload = { goal: string; project_path: string; registered_project_id?: string | null; max_files: number; require_human_review: boolean; execution_mode: ExecutionMode; workflow_name: string; input_text: string; nodes: WorkflowNode[]; edges: WorkflowEdge[] };
 type TaskStreamPayload = Omit<TaskRunPayload, 'nodes'> & { nodes: Array<Pick<WorkflowNode, 'id' | 'type' | 'name' | 'config'>> };
 
 async function stream(path: string, payload: TaskStreamPayload, onEvent: (event: AgentEvent | Record<string, unknown>) => void) {

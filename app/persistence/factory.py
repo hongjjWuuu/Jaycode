@@ -14,6 +14,7 @@ from app.persistence.contracts import (
     McpStore,
     MemoryStore,
     PromptStore,
+    ProjectStore,
     RagStore,
     ReviewStore,
     SkillStore,
@@ -33,6 +34,7 @@ class PersistenceStores:
 
     task: TaskStore
     workflow: WorkflowStore
+    project: ProjectStore
     review: ReviewStore
     skill: SkillStore
     mcp: McpStore
@@ -66,6 +68,7 @@ def _sqlite_stores() -> PersistenceStores:
     return PersistenceStores(
         task=task,
         workflow=task,
+        project=task,
         review=task,
         skill=task,
         mcp=task,
@@ -106,6 +109,7 @@ def _postgres_stores() -> PersistenceStores:
     return PersistenceStores(
         task=task,
         workflow=task,
+        project=task,
         review=task,
         skill=task,
         mcp=task,

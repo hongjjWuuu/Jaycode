@@ -456,6 +456,23 @@ class SQLiteTaskStore:
                 )
                 """
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS project_library (
+                    registered_project_id TEXT PRIMARY KEY,
+                    owner_actor_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    resolved_path TEXT NOT NULL,
+                    project_id TEXT NOT NULL,
+                    enabled INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    last_used_at TEXT,
+                    UNIQUE(owner_actor_id, resolved_path)
+                )
+                """
+            )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_project_library_owner_recent ON project_library(owner_actor_id, enabled, last_used_at)")
 
     # 不是“简单建表”，而是考虑了 schema 演进 这说明项目已经把“版本兼容”当成架构的一部分。
     # 四个方法构成了任务治理的基础动作： 创建任务 更新状态 写事件 存产物
@@ -511,6 +528,47 @@ class SQLiteTaskStore:
                 ),
             )
         return audit
+
+    def list_registered_projects(self, actor_id: str, is_admin: bool = False, include_disabled: bool = False) -> list[dict[str, Any]]:
+        where = [] if is_admin else ["owner_actor_id = ?"]
+        values: list[Any] = [] if is_admin else [actor_id]
+        if not include_disabled:
+            where.append("enabled = 1")
+        clause = f" WHERE {' AND '.join(where)}" if where else ""
+        with self._connect() as conn:
+            rows = conn.execute(f"SELECT * FROM project_library{clause} ORDER BY COALESCE(last_used_at, created_at) DESC, name COLLATE NOCASE", values).fetchall()
+        return [dict(row) | {"enabled": bool(row["enabled"])} for row in rows]
+
+    def save_registered_project(self, actor_id: str, name: str, resolved_path: str, project_id: str) -> dict[str, Any]:
+        now = utc_now_iso()
+        with self._connect() as conn:
+            existing = conn.execute("SELECT * FROM project_library WHERE owner_actor_id = ? AND resolved_path = ?", (actor_id, resolved_path)).fetchone()
+            if existing:
+                conn.execute("UPDATE project_library SET name = ?, project_id = ?, enabled = 1, updated_at = ?, last_used_at = ? WHERE registered_project_id = ?", (name, project_id, now, now, existing["registered_project_id"]))
+                row = conn.execute("SELECT * FROM project_library WHERE registered_project_id = ?", (existing["registered_project_id"],)).fetchone()
+            else:
+                record_id = f"project_{uuid4().hex}"
+                conn.execute("INSERT INTO project_library(registered_project_id, owner_actor_id, name, resolved_path, project_id, enabled, created_at, updated_at, last_used_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)", (record_id, actor_id, name, resolved_path, project_id, now, now, now))
+                row = conn.execute("SELECT * FROM project_library WHERE registered_project_id = ?", (record_id,)).fetchone()
+        return dict(row) | {"enabled": bool(row["enabled"])}
+
+    def update_registered_project(self, registered_project_id: str, actor_id: str, is_admin: bool, *, name: str | None = None, enabled: bool | None = None, touch: bool = False) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM project_library WHERE registered_project_id = ?", (registered_project_id,)).fetchone()
+            if not row or (not is_admin and row["owner_actor_id"] != actor_id):
+                return None
+            now = utc_now_iso()
+            conn.execute("UPDATE project_library SET name = COALESCE(?, name), enabled = COALESCE(?, enabled), updated_at = ?, last_used_at = CASE WHEN ? THEN ? ELSE last_used_at END WHERE registered_project_id = ?", (name, None if enabled is None else int(enabled), now, int(touch), now, registered_project_id))
+            updated = conn.execute("SELECT * FROM project_library WHERE registered_project_id = ?", (registered_project_id,)).fetchone()
+        return dict(updated) | {"enabled": bool(updated["enabled"])}
+
+    def delete_registered_project(self, registered_project_id: str, actor_id: str, is_admin: bool) -> bool:
+        with self._connect() as conn:
+            row = conn.execute("SELECT owner_actor_id FROM project_library WHERE registered_project_id = ?", (registered_project_id,)).fetchone()
+            if not row or (not is_admin and row["owner_actor_id"] != actor_id):
+                return False
+            conn.execute("DELETE FROM project_library WHERE registered_project_id = ?", (registered_project_id,))
+        return True
 
     def list_security_audits(
         self, limit: int = 100, actor_id: str | None = None, role: str | None = None,

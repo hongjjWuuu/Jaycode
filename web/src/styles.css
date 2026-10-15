@@ -7438,6 +7438,17 @@ textarea[data-liquid-glass="ready"] {
 .project-requirement small, .run-target-summary span, .resolved-project span, .resolved-project small { color: #687b90; overflow-wrap: anywhere; }
 .resolved-project { grid-template-columns: auto minmax(0, 1fr); color: #23865f; }
 .resolved-project div { display: grid; gap: 3px; }
+.resolved-project .compact-button { align-self: center; }
+.project-source-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.project-source-actions small { color: #687b90; }
+.project-browser { position: relative; }
+.project-browser-popover { position: absolute; z-index: 20; top: calc(100% + 6px); left: 0; width: min(430px, 78vw); display: grid; gap: 8px; padding: 12px; border: 1px solid #c8dce9; border-radius: 10px; background: #fff; box-shadow: 0 12px 28px rgba(31, 59, 84, .18); }
+.project-browser-list { display: grid; max-height: 220px; overflow: auto; border: 1px solid #e2ebf2; border-radius: 7px; }
+.project-browser-list button, .project-browser-path button { text-align: left; border: 0; background: transparent; padding: 8px; color: #315a78; display: flex; align-items: center; gap: 6px; }
+.project-browser-list button:hover, .project-browser-path button:hover { background: #eef7fc; }
+.project-browser-path { display: flex; gap: 4px; align-items: center; overflow: hidden; color: #687b90; }
+.project-browser-path span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.text-button { justify-self: start; border: 0; background: transparent; color: #55758d; padding: 4px 0; }
 .field-error, .run-disabled-reason { color: #b33b4b; margin: 0; }
 
 /* Reports keep every result reachable inside the fixed workbench. */

@@ -17,7 +17,7 @@ from app.benchmark_runner import (
     run_rag_benchmark,
     run_workflow_benchmark,
 )
-from app.core.project_paths import ProjectPathError, resolve_project_path
+from app.core.project_paths import ProjectPathError, browse_project_directories, project_browser_roots, resolve_project_path
 from app.core.security import audit_action, execution_auth_context
 from app.graphs.project_analyzer_graph import project_analyzer_graph
 from app.graphs.studio_graphs import (
@@ -72,6 +72,10 @@ from app.schemas.studio import (
     MemoryRecordResponse,
     ProjectResolveRequest,
     ProjectResolveResponse,
+    ProjectDirectoryBrowseRequest,
+    ProjectLibraryRenameRequest,
+    ProjectLibrarySaveRequest,
+    ProjectLibraryStatusRequest,
     RagDocumentAclRequest,
     RagGoldCaseRequest,
     RagIngestRequest,
@@ -135,6 +139,86 @@ def resolve_project(request: ProjectResolveRequest) -> ProjectResolveResponse:
         file_count=len(scan["files"]),
         directory_count=len(scan["directories"]),
     )
+
+
+@router.get("/projects/browser/roots", tags=["Project Library"])
+def list_project_browser_roots() -> dict[str, object]:
+    return {"roots": project_browser_roots()}
+
+
+@router.post("/projects/browser/directories", tags=["Project Library"])
+def browse_project_directories_api(request: ProjectDirectoryBrowseRequest) -> dict[str, object]:
+    try:
+        return browse_project_directories(request.root_id, request.relative_path)
+    except ProjectPathError as exc:
+        raise _project_http_error(exc) from exc
+
+
+def _project_library_context() -> tuple[str, bool]:
+    context = execution_auth_context()
+    return context.actor_id, context.role in {"admin", "system-agent"}
+
+
+def _task_project_path(request: TaskRunRequest) -> str | None:
+    """Resolve saved projects server-side; caller input is never trusted as authorization."""
+    if not request.registered_project_id:
+        return request.project_path
+    actor_id, is_admin = _project_library_context()
+    projects = get_persistence_stores().project.list_registered_projects(actor_id, is_admin, include_disabled=True)
+    project = next((item for item in projects if item["registered_project_id"] == request.registered_project_id), None)
+    if not project:
+        raise HTTPException(status_code=403, detail={"error_code": "PROJECT_LIBRARY_FORBIDDEN", "message": "项目不存在或无权使用。"})
+    if not project["enabled"]:
+        raise HTTPException(status_code=422, detail={"error_code": "PROJECT_LIBRARY_DISABLED", "message": "该项目已被停用，不能启动新任务。"})
+    get_persistence_stores().project.update_registered_project(request.registered_project_id, actor_id, is_admin, touch=True)
+    return str(project["resolved_path"])
+
+
+@router.get("/projects/library", tags=["Project Library"])
+def list_project_library(include_disabled: bool = False) -> dict[str, object]:
+    actor_id, is_admin = _project_library_context()
+    return {"projects": get_persistence_stores().project.list_registered_projects(actor_id, is_admin, include_disabled and is_admin)}
+
+
+@router.post("/projects/library", tags=["Project Library"])
+def save_project_library(request: ProjectLibrarySaveRequest) -> dict[str, object]:
+    try:
+        project = resolve_project_path(request.project_path)
+    except ProjectPathError as exc:
+        raise _project_http_error(exc) from exc
+    actor_id, _ = _project_library_context()
+    saved = get_persistence_stores().project.save_registered_project(actor_id, request.name or project.project_name, project.resolved_path, project.project_id)
+    audit_action("project_library_save", "project", resource_id=str(saved["registered_project_id"]), metadata={"project_id": project.project_id})
+    return {"project": saved}
+
+
+@router.patch("/projects/library/{registered_project_id}", tags=["Project Library"])
+def rename_project_library(registered_project_id: str, request: ProjectLibraryRenameRequest) -> dict[str, object]:
+    actor_id, is_admin = _project_library_context()
+    saved = get_persistence_stores().project.update_registered_project(registered_project_id, actor_id, is_admin, name=request.name)
+    if not saved:
+        raise HTTPException(status_code=404, detail={"error_code": "PROJECT_LIBRARY_NOT_FOUND", "message": "项目不存在或无权修改。"})
+    return {"project": saved}
+
+
+@router.patch("/projects/library/{registered_project_id}/status", tags=["Project Library"])
+def update_project_library_status(registered_project_id: str, request: ProjectLibraryStatusRequest) -> dict[str, object]:
+    actor_id, is_admin = _project_library_context()
+    if not is_admin:
+        raise HTTPException(status_code=403, detail={"error_code": "PROJECT_LIBRARY_ADMIN_REQUIRED", "message": "只有管理员可停用项目。"})
+    saved = get_persistence_stores().project.update_registered_project(registered_project_id, actor_id, True, enabled=request.enabled)
+    if not saved:
+        raise HTTPException(status_code=404, detail={"error_code": "PROJECT_LIBRARY_NOT_FOUND", "message": "项目不存在。"})
+    return {"project": saved}
+
+
+@router.delete("/projects/library/{registered_project_id}", tags=["Project Library"])
+def delete_project_library(registered_project_id: str) -> dict[str, bool]:
+    actor_id, is_admin = _project_library_context()
+    if not get_persistence_stores().project.delete_registered_project(registered_project_id, actor_id, is_admin):
+        raise HTTPException(status_code=404, detail={"error_code": "PROJECT_LIBRARY_NOT_FOUND", "message": "项目不存在或无权移除。"})
+    audit_action("project_library_delete", "project", resource_id=registered_project_id)
+    return {"deleted": True}
 
 # 直接调子图（简单能力）
 # 最简模式：前端请求 → 调图 → 返回
@@ -983,7 +1067,7 @@ def run_collaboration(request: CollaborationRequest) -> TaskRunResponse:
 def run_task(request: TaskRunRequest) -> TaskRunResponse:
     workflow_payload = _resolve_task_workflow(request)
     try:
-        preflight = preflight_task(workflow_payload["nodes"], request.project_path)
+        preflight = preflight_task(workflow_payload["nodes"], _task_project_path(request))
     except ProjectPathError as exc:
         raise _project_http_error(exc) from exc
     canonical_path = preflight.project.resolved_path if preflight.project else None
@@ -1016,7 +1100,7 @@ async def run_task_stream(request: TaskRunRequest, http_request: Request) -> Str
 @router.post("/tasks/collaborate", response_model=TaskRunResponse, tags=["Task Runtime"])
 def run_collaboration_task_api(request: TaskRunRequest) -> TaskRunResponse:
     try:
-        project = resolve_project_path(request.project_path)
+        project = resolve_project_path(_task_project_path(request))
     except ProjectPathError as exc:
         raise _project_http_error(exc) from exc
     context = harness_runtime.create_context(
