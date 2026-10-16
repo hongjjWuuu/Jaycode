@@ -7688,6 +7688,59 @@ textarea[data-liquid-glass="ready"] {
   overflow: hidden;
 }
 
+/* Saved workflows expand the workbench vertically.  The page boundary owns
+   scrolling, so the list never has to shrink into an unreadable inner pane. */
+.page-boundary .workflow-page {
+  height: auto;
+  min-height: 100%;
+}
+
+.workflow-page .workflow-sidebar {
+  display: flex;
+  flex-direction: column;
+  height: auto;
+  max-height: none;
+  min-height: 0;
+  overflow: visible;
+}
+
+.workflow-page .workflow-sidebar > .panel-title,
+.workflow-page .workflow-sidebar > .api-error,
+.workflow-page .workflow-sidebar > .workflow-fields,
+.workflow-page .workflow-sidebar > .workflow-validation {
+  flex: 0 0 auto;
+}
+
+.workflow-page .saved-workflows-section {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  min-height: auto;
+  margin-top: 10px;
+  border-top: 1px solid #d9e3eb;
+}
+
+.workflow-page .saved-workflows-section > .panel-title {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.workflow-page .saved-workflow-actions {
+  flex-wrap: nowrap;
+}
+
+.workflow-page .saved-workflow-actions .secondary {
+  min-width: 0;
+  padding-inline: 9px;
+  white-space: nowrap;
+}
+
+.workflow-page .saved-workflow-list {
+  min-height: auto;
+  overflow: visible;
+  padding-bottom: 12px;
+}
+
 /* Keep machine-sized payloads bounded without constraining normal page content. */
 .page-boundary .skill-json pre,
 .page-boundary .mcp-log-details pre,
